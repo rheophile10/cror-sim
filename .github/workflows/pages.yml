@@ -29,9 +29,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # 22, not 20: `world-sim`'s test script passes a glob to `node --test`,
+      # and node only expands one itself from 22 onwards. The library's
+      # devDependencies pin `@types/node: ^22` for the same reason.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install
         run: |
           npm ci --prefix world-sim
