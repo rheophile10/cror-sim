@@ -93,8 +93,15 @@ export interface RiverSpec {
   points: [number, number][];
   /** Metres. May vary along the course by giving one width per point. */
   width?: number | number[];
-  /** Surface elevation, metres. Flat for the whole reach. */
-  level: number;
+  /**
+   * Surface elevation, metres — one figure, or one per point.
+   *
+   * A river *flows*, and a single flat level cannot fill a valley whose floor
+   * changes elevation along it: the water is either up on the banks at one end
+   * or gone at the other. Giving a level per point is the smallest honest fix,
+   * and it is what turns a stretch of water into a watercourse.
+   */
+  level: number | number[];
   color?: string;
 }
 
@@ -201,6 +208,9 @@ export interface River {
   /** Left and right bank, paired, in world coordinates at the surface level. */
   left: { x: number; y: number }[];
   right: { x: number; y: number }[];
+  /** Surface elevation at each point along the course. */
+  levels: number[];
+  /** The lowest of them, which is what a single figure used to mean. */
   level: number;
   color: string;
 }
@@ -243,6 +253,14 @@ export interface Road {
   length: number;
   width: number;
   color: string;
+  /**
+   * Where this road meets another, and how far along each.
+   *
+   * Found once, when the scenery is built. Without them every vehicle is stuck
+   * on the road it was put on for ever, which reads as a set of independent
+   * conveyor belts rather than a road network.
+   */
+  junctions: { at: number; road: string; theirAt: number }[];
 }
 
 export interface Vehicle {
@@ -507,7 +525,44 @@ export function buildScenery(
     }
   }
 
+  // Where the roads meet each other. Done after every road exists, because a
+  // junction is a fact about a pair of them.
+  linkRoads(out.roads);
+
+  // Nothing grows in the water. The forests are planted against the *ground*,
+  // which knows nothing about the sheets laid over it, so anything that ended
+  // up in a lake or a river is taken out afterwards.
+  out.trees = out.trees.filter((t) => !inAnyWater(out, t.x, t.y, t.z));
+
   return out;
+}
+
+/** Whether a point is under any water in this scenery. */
+function inAnyWater(scenery: Scenery, x: number, y: number, z: number): boolean {
+  for (const lake of scenery.lakes) {
+    if (z > lake.level) continue;
+    const dx = x - lake.cx;
+    const dy = y - lake.cy;
+    const d = Math.hypot(dx, dy);
+    if (d < 1) return true;
+    const n = lake.rim.length;
+    const a = (((Math.atan2(dy, dx) / (Math.PI * 2)) % 1) + 1) % 1;
+    const i = Math.floor(a * n) % n;
+    const r = Math.hypot(lake.rim[i]!.x - lake.cx, lake.rim[i]!.y - lake.cy);
+    if (d <= r) return true;
+  }
+  for (const river of scenery.rivers) {
+    for (let i = 0; i < river.left.length; i++) {
+      const l = river.left[i]!;
+      const r = river.right[i]!;
+      const half = Math.hypot(l.x - r.x, l.y - r.y) / 2;
+      if (half < 1) continue;
+      const mx = (l.x + r.x) / 2;
+      const my = (l.y + r.y) / 2;
+      if (Math.hypot(x - mx, y - my) <= half && z <= (river.levels[i] ?? river.level)) return true;
+    }
+  }
+  return false;
 }
 
 function buildRoad(spec: RoadSpec, terrain: Terrain, index: number): Road {
@@ -550,6 +605,7 @@ function buildRoad(spec: RoadSpec, terrain: Terrain, index: number): Road {
     length,
     width: spec.width ?? 7,
     color: spec.color ?? '#3b3e44',
+    junctions: [],
   };
 }
 
@@ -558,7 +614,10 @@ function placeOnRoad(vehicle: Vehicle, road: Road): void {
   const n = road.samples.length;
   if (n === 0) return;
   const spacing = road.length / Math.max(1, n - 1);
-  const wrapped = ((vehicle.along % road.length) + road.length) % road.length;
+  // Clamped, not wrapped: `along` running past the end means the vehicle has
+  // left, and `World` recycles it. Wrapping put it back on at the other edge,
+  // which on a road that reaches the map boundary is a visible teleport.
+  const wrapped = clamp(vehicle.along, 0, road.length);
   const i = clamp(Math.floor(wrapped / spacing), 0, n - 1);
   const pt = road.samples[i]!;
   const next = road.samples[Math.min(i + 1, n - 1)]!;
@@ -605,8 +664,41 @@ export function stepScenery(scenery: Scenery, dt: number, crossings: readonly Cr
       // reads as a glitch.
       vehicle.speed += (vehicle.cruise - vehicle.speed) * clamp(dt / 2.5, 0, 1);
     }
+    const before = vehicle.along;
     vehicle.along += vehicle.speed * dt;
-    placeOnRoad(vehicle, vehicle.road);
+    turnAtJunction(vehicle, before, scenery.roads);
+    placeOnRoad(vehicle, vehicle.road!);
+  }
+}
+
+/**
+ * Take a turn, sometimes, where two roads cross.
+ *
+ * A vehicle that never leaves the road it was put on turns a road network into
+ * a set of independent conveyor belts. Whether it turns is decided from its own
+ * position rather than from a random number, so a scene runs the same way
+ * twice — the same reason everything else here is seeded.
+ */
+function turnAtJunction(vehicle: Vehicle, before: number, roads: readonly Road[]): void {
+  const road = vehicle.road;
+  if (!road || road.junctions.length === 0) return;
+  const lo = Math.min(before, vehicle.along);
+  const hi = Math.max(before, vehicle.along);
+  for (const j of road.junctions) {
+    if (j.at < lo || j.at > hi) continue;
+    // About one in three, from a hash of where and which vehicle.
+    const roll = Math.abs(Math.sin((j.at + vehicle.x * 0.37 + vehicle.y * 0.11) * 12.9898) * 43758.5453) % 1;
+    if (roll > 0.34) continue;
+    const onto = roads.find((r) => r.id === j.road);
+    if (!onto) continue;
+    vehicle.road = onto;
+    vehicle.along = j.theirAt;
+    // Which way along the new road: keep whichever direction is closer to the
+    // way it was already going, so a turn is a turn and not a reversal.
+    const dir = roll < 0.17 ? 1 : -1;
+    vehicle.cruise = Math.abs(vehicle.cruise) * dir;
+    vehicle.speed = Math.abs(vehicle.speed) * dir;
+    return;
   }
 }
 
@@ -673,6 +765,7 @@ function buildRiver(spec: RiverSpec, terrain: Terrain, index: number): River {
   const pts = spec.points.map(([cx, cy]) => ({ x: cx * cs, y: cy * cs }));
   const left: { x: number; y: number }[] = [];
   const right: { x: number; y: number }[] = [];
+  const levels: number[] = [];
   for (let i = 0; i < pts.length; i++) {
     const a = pts[Math.max(0, i - 1)]!;
     const b = pts[Math.min(pts.length - 1, i + 1)]!;
@@ -688,16 +781,31 @@ function buildRiver(spec: RiverSpec, terrain: Terrain, index: number): River {
     // laid over the landscape and a river runs visibly up a hillside — the
     // surface is level, but where it *ends* is decided by the ground, not by a
     // number in the scene.
-    left.push(bank(terrain, p, nx, ny, w / 2, spec.level));
-    right.push(bank(terrain, p, -nx, -ny, w / 2, spec.level));
+    const level = levelAt(spec.level, i, pts.length);
+    levels.push(level);
+    left.push(bank(terrain, p, nx, ny, w / 2, level));
+    right.push(bank(terrain, p, -nx, -ny, w / 2, level));
   }
   return {
     id: spec.id ?? `river-${index}`,
     left,
     right,
-    level: spec.level,
+    levels,
+    level: Math.min(...levels),
     color: spec.color ?? '#2f5f7a',
   };
+}
+
+/** One surface elevation, or the one that belongs to this point along the course. */
+function levelAt(level: number | number[], i: number, n: number): number {
+  if (!Array.isArray(level)) return level;
+  if (level.length === 0) return 0;
+  // Stretched across the course, so a scene can give four figures for a river
+  // sampled at fifteen points and get a smooth fall between them.
+  const t = (i / Math.max(1, n - 1)) * (level.length - 1);
+  const a = Math.floor(t);
+  const b = Math.min(level.length - 1, a + 1);
+  return level[a]! + (level[b]! - level[a]!) * (t - a);
 }
 
 /**
@@ -759,4 +867,44 @@ function placeOnLake(boat: Boat): void {
   boat.x = x;
   boat.y = y;
   boat.z = lake.level;
+}
+
+/** Find every place two roads cross, and record it on both of them. */
+function linkRoads(roads: Road[]): void {
+  for (const road of roads) road.junctions = [];
+  for (let a = 0; a < roads.length; a++) {
+    for (let b = a + 1; b < roads.length; b++) {
+      const ra = roads[a]!;
+      const rb = roads[b]!;
+      const sa = ra.length / Math.max(1, ra.samples.length - 1);
+      const sb = rb.length / Math.max(1, rb.samples.length - 1);
+      for (let i = 0; i < ra.samples.length - 1; i++) {
+        for (let j = 0; j < rb.samples.length - 1; j++) {
+          const hit = segmentsMeet(ra.samples[i]!, ra.samples[i + 1]!, rb.samples[j]!, rb.samples[j + 1]!);
+          if (!hit) continue;
+          const atA = (i + hit.t) * sa;
+          const atB = (j + hit.u) * sb;
+          // One junction per pair per place: a wandering pair can clip twice
+          // within a few metres and that is one intersection.
+          if (ra.junctions.some((x) => x.road === rb.id && Math.abs(x.at - atA) < 60)) continue;
+          ra.junctions.push({ at: atA, road: rb.id, theirAt: atB });
+          rb.junctions.push({ at: atB, road: ra.id, theirAt: atA });
+        }
+      }
+    }
+  }
+}
+
+function segmentsMeet(
+  a1: { x: number; y: number },
+  a2: { x: number; y: number },
+  b1: { x: number; y: number },
+  b2: { x: number; y: number },
+): { t: number; u: number } | null {
+  const d = (a2.x - a1.x) * (b2.y - b1.y) - (a2.y - a1.y) * (b2.x - b1.x);
+  if (Math.abs(d) < 1e-9) return null;
+  const t = ((b1.x - a1.x) * (b2.y - b1.y) - (b1.y - a1.y) * (b2.x - b1.x)) / d;
+  const u = ((b1.x - a1.x) * (a2.y - a1.y) - (b1.y - a1.y) * (a2.x - a1.x)) / d;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return { t, u };
 }

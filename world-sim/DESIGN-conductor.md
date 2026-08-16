@@ -583,3 +583,304 @@ these are rote cards with long prose answers, and a string comparison would mark
 The `facing` field on 40 generated signals was `with`/`against`; the type is
 `up`/`down`. They were silently defaulting, so none of them governed anything.
 Worth remembering that a scene is JSON and JSON does not typecheck.
+
+---
+
+# The rest of the country
+
+## Everything else that kills people
+
+The railway is not the only hazard on a right of way, and a model that could
+run a conductor over but not drown, run down, maul or trample them had drawn an
+arbitrary line. `Person.injury` now has `road`, `drowned`, `mauled` and
+`trampled` alongside `struck` and `crushed`, and `fell()` is exported because
+the railway is no longer the only thing that ends a shift.
+
+**Trespassers** are `Person`s with `role: 'trespasser'` and `roam: true`. That
+is deliberate: everything that can happen to a conductor on the ground happens
+to them by exactly the same rules, and the whole reason a trespasser is worth
+having is that they are subject to the same physics and none of the same
+training. `World` picks their destinations; the walking is the same walking
+everybody does, so they are run over by the same code.
+
+## Animals
+
+`wildlife.ts`. Animals live in **world coordinates**, unlike people, whose whole
+design turns on being on a track — a moose does not know where the right of way
+is, and that is the point of it being on the railway.
+
+Three rules and no more: wander within a home range; notice; reach. A predator
+closes from a long way off. A moose does not hunt — it stands in the willows
+until you are thirty metres away and then it is a different animal, which is why
+it *tramples* rather than mauls and why it is not left standing over the body.
+Wolves run as a pack: one animal picks the destinations and the rest keep
+station, taking the leader's state so they walk when it walks. (Left grazing at
+a quarter pace they strung out over half a kilometre — a queue, not a pack.)
+
+**The horn clears the right of way**, which is a large part of why it is sounded.
+Everything with any sense runs from it and drops whatever it was going after, so
+sounding the alarm calls a bear off somebody. The one species unmoved by it is
+the one that should not be there at all.
+
+**What a car hits decides what happens to the car.** Half a tonne of moose with
+its body at windscreen height writes the vehicle off; a wolf does not. A wrecked
+vehicle stops where it is and becomes part of the landscape, which is what one
+does.
+
+`dinosaur` is a joke and is labelled as one in the source. It costs a species row
+and one branch, because "something large comes over and kills whoever is standing
+there" already existed. What it adds is eating *equipment* — which is the only
+reason `maul` knows about cars. Nothing in the rules layer should ever be written
+against it.
+
+**A bug this found:** the hazard pass was guarded on `animals.length > 0`, which
+quietly turned off drowning and being run down on a road in any scene without
+wildlife. It always runs now.
+
+## Locating the railway
+
+The line was riding up to 25 m in the air and 23 m underground, with 71% of it
+on works over 3 m. Tuning feature parameters by eye did not fix it and was never
+going to: two gentle swells that overlap are not gentle, and a lake basin four
+hundred metres off the line still tips the ground under it.
+
+So the corridor is **located** instead, by a script that works against the real
+`Terrain` evaluation. Sample the ground along the alignment; work out the profile
+a locating engineer would use — the same country, smoothed over two kilometres,
+then held to 1% — and append a chain of small corrective features that cancel the
+difference. Iterated, because the corrections overlap, and damped so it converges
+instead of ringing. Bridge spans are skipped: a river valley is meant to be there.
+
+Median gap **1.1 m**, 95% within **3.0 m**, nothing deeper than a 6 m cut. The
+country away from the line keeps all its relief, including mountains.
+
+The same trick carves the **watercourses**, and for the same reason: a river cut
+as a constant-depth trench into rolling country does not hold water, because its
+floor rises with the ground. And a river has **one level per point**, not one
+level — a single flat surface is either up on the banks at one end or gone at the
+other. Bridge decks now sit 24–29 m above the water.
+
+**Roads are flush with the rails at a crossing.** A road is draped on the ground
+and the track is graded onto it, so at a crossing the two disagree by whatever the
+earthworks did — and a highway diving under the rails is the one place that is
+unmissable. `World` blends the road up to the railhead across the crossing.
+
+## Lakes, boats, roads, settlements
+
+Lakes are the same bargain as rivers: the surface is flat, the **shore** is found
+by casting rays out from the centre until the ground rises to meet it. A lake
+sited on a hilltop is simply not there. They are drawn as a fan of triangles
+because the outline follows the basin and can be markedly concave, and a concave
+polygon filled as one shape crosses itself.
+
+Roads run **off both edges of the map** rather than stopping either side of the
+rails, and two of them run alongside the line for tens of kilometres. Traffic is
+cars, trucks, buses and semis, all with headlights — which, like the locomotive's,
+light nothing. Settlements are scattered handfuls of buildings, not rows.
+
+---
+
+# The brake pipe was diffusion, and should have been a wave
+
+A thirty-eight car train would not move. Releasing the automatic brake charged
+the head end to 90 psi in ten seconds and left the tail cylinders at 50 psi five
+minutes later, so the train sat there with the throttle wide open. It read as
+"the load is too heavy". It was not: 1,060 kN of tractive effort against 116 kN
+of grade and 49 kN of rolling resistance.
+
+`stepAir` moved pressure **out of** one car and **into** the next — conservative
+diffusion. Diffusion spreads as the square root of time, so the delay to reach
+the tail grows with the **square** of the number of cars. Against the four- to
+twelve-car trains the module was written and tested with, that was invisible.
+At thirty-eight cars it is fatal.
+
+It is also the wrong physics. The brake pipe is not a closed volume being
+sloshed about; it is a line fed by a compressor at one end and open to
+atmosphere wherever a cock is. What travels along it is a **wave**, and a wave
+takes the same time per car however long the train.
+
+So propagation is now a first-order lag from each car to the next, swept head to
+tail in place, and the pressure is **not** taken out of the neighbour. Release
+now takes about fifteen seconds on that train instead of never.
+
+Three things fell out of it, and each is worth knowing:
+
+**One direction only.** A backward sweep as well seems obviously right and is
+not: it drags each car straight back down toward the tail it has just pulled up,
+the two cancel, and what is left is the diffusion that was being replaced. It is
+not needed either — a hose that lets go vents that car directly, and the
+emergency test looks at every car, so a break anywhere still puts the whole
+movement in emergency.
+
+**A venting car is a hole, not a node.** Once the sweep no longer drains the car
+ahead, the compressor will happily make up a wide-open angle cock for ever — and
+a train cut in two never goes into emergency, which is the single most important
+thing the air brake does. Cars open to atmosphere are skipped by the sweep.
+
+**The air flow indicator had to be re-derived.** It read the head-end feed, which
+worked only because propagation was conservative and the whole train's leakage
+had to pass through car zero. With a wave it does not, so the gauge now sums what
+is actually made up: the head-end feed plus every car the sweep had to raise.
+
+Two tests then failed for a good reason rather than a bad one — a train coasting
+down a grade now reaches end of steel inside the window they measured, and an
+automatic driver told it can stop at 0.9 m/s² now *can*. Both were re-timed
+against the corrected behaviour, and the second was given a rate nothing on rails
+could achieve.
+
+---
+
+# Blocks that follow the railway
+
+`resolveSignals` grouped signals **by track** and ran each track's list
+independently, so a block ended wherever a track segment ended. That was fine
+until a main track was cut into thirteen segments at every switch: each signal's
+block stopped at its own segment boundary, a movement one segment ahead was
+invisible, and nothing ever showed Stop for it.
+
+Blocks now follow a **route walked through the network** — from each signal,
+forward in the direction it faces, until the next signal facing the same way.
+Everything between is the block. Signals are settled far-to-near in one pass so
+an approach aspect steps back from a Stop in the same frame rather than lagging
+behind it by one.
+
+The progression falls out of the catalogue rather than being coded: a movement
+four blocks out sees Clear, then Advance Clear to Stop, then Clear to Stop, then
+Stop. `tests/blocks.test.ts` asserts exactly that sequence across a switch,
+which is the case the old code could not see.
+
+The scene now opens with M304 **in the Rennie siding**, head end against the
+dwarf at the west end, which is at Stop — in the hole for a meet, with a
+westward movement holding the main. That is the ordinary situation a crew spends
+most of a shift in, and it is a better starting position than standing on the
+main with nothing to read.
+
+# Roads, crossings and buildings are found, not declared
+
+A scene that states "there is a crossing at mile 4.2" and separately draws a
+road near mile 4.2 is stating the same fact twice and getting it wrong the
+second time — which is exactly what had happened; the roads did not line up with
+their crossings.
+
+Crossings are now **computed** from where a road's samples actually intersect a
+track's, including the angle the deck is drawn to. Road bridges are computed the
+same way, from where a road would otherwise be under water, and the deck is
+lifted to clear whatever it crosses — taking the two bank heights alone gave a
+bridge with *negative* clearance, because both banks were themselves submerged.
+Buildings that ended up more than sixty metres from any road are pulled in
+beside one, and any that would stand in water are dropped.
+
+`Bridge` carries a road as readily as a track now; it was already defined
+against an interface with `at(s)` and `length`, so a road only had to be
+presented as one.
+
+# Locating water, which took four goes
+
+Worth recording because each attempt failed differently.
+
+1. **Constant-depth trench.** The floor rises with the country, so one flat
+   surface is up on the banks at one end and gone at the other.
+2. **A level per point, solved for the intended width.** The surface then jumps
+   about with the terrain, and forcing it monotonic drains half the course.
+3. **Floor cut to the terrain minimum.** Ratchets: each round recomputed the
+   minimum from ground the previous round had already lowered, and the Bird
+   River ended up eighty-five metres below its own bridge.
+4. **A river gradient.** The floor starts just under the ground at the upstream
+   end and falls two and a half metres per kilometre — *and* is clamped never to
+   rise above the local ground, because a surface that climbed over its own
+   valley put water above the railway bridge crossing it. The water sits three
+   metres above that floor, so the surface is decided once, by the channel, and
+   never re-solved against anything else.
+
+# The alerter is speed-dependent
+
+Twenty-five seconds flat is right at track speed and punishing at yard speed —
+it was applying the brakes during switching moves, and it interrupted the escape
+scenario in my own test harness. The real device varies with speed because the
+distance covered while not answering is what matters. Sixty seconds at a crawl,
+twenty-five at track speed, interpolated. It is also audible now: an
+intermittent beep while it asks, continuous once it has made the application.
+
+---
+
+# A food chain, and a road network
+
+## Predation
+
+`PREY` is a table, not a set of special cases: wolves take moose, bears take
+wolves and moose, and everything with teeth takes anybody on the ground. A moose
+hunts nothing — its list is empty — which leaves it the one animal here that
+kills without meaning to, and is why it *tramples* rather than mauls.
+
+The distinction that makes this work is `provoked`: for a predator it is the
+full sighting range, for a moose it is thirty metres of personal space. One
+number, two completely different animals.
+
+**Everything eaten is replaced.** A population that only ever falls is one you
+stop seeing anything in after twenty minutes, so `stepWildlife` takes a `spawn`
+callback and `World` puts another of that species somewhere clear of the
+railway. Over fifteen simulated minutes the census holds at its starting numbers
+while predation goes on underneath it.
+
+People drown and animals do not, which is the whole of "animals can swim".
+
+## Roads are a network
+
+Roads now know where they cross each other — found once, when the scenery is
+built, because a junction is a fact about a pair of them. A vehicle reaching one
+takes it about a third of the time, decided from a hash of the place and the
+vehicle rather than a random number, so a scene runs the same way twice.
+
+Traffic that runs off the end of its road has **left the district**: it is taken
+off the map and another vehicle put on somewhere else. `placeOnRoad` used to
+wrap `along`, which was invisible while roads were short stubs either side of
+the rails and became a visible teleport the moment they were extended to the map
+edges.
+
+## The World menu
+
+Five sliders — moose, wolves, bears, trespassers, traffic — applied by adding
+and taking away rather than by rebuilding, because a rebuild is two seconds and
+throws away wherever the train had got to. A few at a time per frame: dragging a
+slider fires on every pixel, and adding eighty animals in one frame is a stall
+you can see.
+
+---
+
+# Sea level, and washouts
+
+One number for the whole scene that can be changed while it runs. Raise it and
+the low ground floods; raise it far enough and it reaches the formation, and the
+stretches it reaches are **washed out**.
+
+This is worth having because almost every other hazard here is one a crew can
+see coming — a signal, a switch, an animal on the right of way. A washout is the
+other kind: a piece of railway that was there yesterday and is not there now,
+and which nothing on the train can detect. The rules about it are about
+*reporting* and *protecting*, because the only defence is somebody having found
+it. `World.trackWashedOut` and `World.washouts` are the global state a rules
+layer would ask for first.
+
+**The test is the formation, not the water line.** Water lapping at the toe of an
+embankment has not taken the railway away; water at the ties has. So a stretch is
+out where the level reaches `railZ - Terrain.formationDrop`. And a **bridge is
+never a washout** — a trestle standing in a flooded river is doing exactly what
+it was built for, so bridged spans are excluded.
+
+Anything standing in a washout is standing on nothing: it is thrown off the rails
+in the same step, with a reason that says where.
+
+## Simplifications, named
+
+Nothing erodes. A washout appears and disappears the instant the level crosses
+the threshold, where a real one takes a storm to make and a work train to fix and
+the ground stays gone after the water drops. What is modelled is the **state** —
+which stretches are out — because that is what a movement and a rulebook care
+about.
+
+## The bug worth remembering
+
+The first version found no washouts at all once the sea was high, because the
+scan closed a run only when it came *out* of the water — and a track under water
+all the way to its far end never does. That is the commonest case of all, not an
+edge case.

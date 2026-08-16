@@ -243,6 +243,9 @@ export type {
 export { DEFAULT_WILDLIFE_STYLE, drawWildlife } from './render/wildlife.ts';
 export type { WildlifeStyle } from './render/wildlife.ts';
 
+export { DEFAULT_WASHOUT, findWashouts, washedOutAt } from './washout.ts';
+export type { Washout, WashoutOptions } from './washout.ts';
+
 export { EventLog } from './events.ts';
 export type { EventKind, WorldEvent } from './events.ts';
 

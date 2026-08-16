@@ -120,10 +120,27 @@ export interface AirBrakeOptions {
   regulatingPsi: number;
   /** A full service reduction, psi below regulating. */
   fullServicePsi: number;
-  /** How fast pressure moves between adjacent cars. Sets propagation delay. */
+  /**
+   * How fast a change travels from one car to the next, per second.
+   *
+   * A first-order lag with a time constant of `1 / propagation` seconds per car,
+   * so a signal reaches the tail in roughly that many seconds times the number
+   * of cars — linear in train length, as a wave is.
+   */
   propagation: number;
   /** How fast the locomotive can feed or vent the pipe at the head end. */
   feedRate: number;
+  /**
+   * How fast a **release** travels from car to car, per second.
+   *
+   * Much slower than an application, and that asymmetry is real. A reduction is
+   * a wave of air leaving the pipe and it moves at something like the speed of
+   * sound in it. A release has to *refill* the pipe from the head end against
+   * every auxiliary reservoir on the train drawing off it at the same time, so
+   * a hundred-car train takes a minute or two to release rather than the twenty
+   * seconds an application takes to reach the tail.
+   */
+  releasePropagation: number;
   /** How fast an open end dumps to atmosphere. */
   ventRate: number;
   /** How fast a cylinder fills from its own reservoir once applying. */
@@ -166,7 +183,8 @@ export interface AirBrakeOptions {
 export const DEFAULT_AIR: AirBrakeOptions = {
   regulatingPsi: 90,
   fullServicePsi: 26,
-  propagation: 1.6,
+  propagation: 4.5,
+  releasePropagation: 1.1,
   feedRate: 9,
   ventRate: 40,
   applyRate: 14,
@@ -291,16 +309,52 @@ export function stepAir(train: AirTrain, dt: number, opt: AirBrakeOptions = DEFA
     }
   }
 
-  // 3. Equalise along whatever lengths of pipe are actually joined up. This is
-  //    the propagation delay: the rear of a long train is still at running
+  // 3. Propagate along whatever lengths of pipe are actually joined up. This is
+  //    the delay that matters: the rear of a long train is still at running
   //    pressure for a while after the head end has begun to reduce.
-  for (let i = 0; i < n - 1; i++) {
-    const a = cars[i]!.air;
-    const b = cars[i + 1]!.air;
+  //
+  //    Each car's pipe chases its neighbour's with a first-order lag, and the
+  //    pressure is **not** taken out of the neighbour. That looks like a
+  //    conservation error and is not one: the brake pipe is not a closed volume
+  //    being sloshed about, it is a line fed by a compressor at one end and open
+  //    to atmosphere wherever a cock is, so what travels along it is a *wave*.
+  //
+  //    Modelling it as conservative diffusion — which this did — spreads a
+  //    disturbance as the square root of time, so the delay grows with the
+  //    *square* of the number of cars. On the eight-car trains this was written
+  //    against, that was invisible. On a thirty-eight car train it meant the
+  //    tail was still braked five minutes after the engineer released and the
+  //    train would not move at all. A wave takes the same time per car whatever
+  //    the length, which is what a real one does.
+  //    One sweep, head to tail, updating in place — so a change at the head end
+  //    is carried the whole length in a single pass rather than one car per
+  //    step. It is deliberately **not** run in the other direction as well: a
+  //    backward sweep immediately drags each car back down toward the tail it
+  //    has just pulled up, the two cancel, and what is left is the diffusion
+  //    this was meant to replace.
+  //
+  //    Nothing is lost by leaving it out. A hose that lets go at the rear vents
+  //    that car directly (step 2), and the emergency test below looks at *every*
+  //    car — so a break anywhere still puts the whole movement in emergency,
+  //    which is the only way the head end needs to hear about it.
+  const applyLag = clamp(opt.propagation * dt, 0, 1);
+  const releaseLag = clamp(opt.releasePropagation * dt, 0, 1);
+  let made = 0;
+  for (let i = 1; i < n; i++) {
+    const a = cars[i - 1]!.air;
+    const b = cars[i]!.air;
     if (!continuous(a, b)) continue;
-    const flow = (a.brakePipePsi - b.brakePipePsi) * clamp(opt.propagation * dt, 0, 0.5);
-    a.brakePipePsi -= flow;
-    b.brakePipePsi += flow;
+    // A car open to atmosphere is a **hole**, not a node to be filled. Letting
+    // the sweep raise one means the compressor makes up a wide-open angle cock
+    // indefinitely, and a train cut in two never goes into emergency — which is
+    // the single most important thing the air brake does.
+    if (ventsAhead(b) || ventsBehind(b)) continue;
+    // Rising pressure is a release and travels slowly; falling is an
+    // application and travels fast.
+    const gap = a.brakePipePsi - b.brakePipePsi;
+    const rise = gap * (gap > 0 ? releaseLag : applyLag);
+    b.brakePipePsi += rise;
+    if (rise > 0) made += rise;
   }
 
   // 4. Each car's control valve, reading only its own pipe pressure.
@@ -381,10 +435,15 @@ export function stepAir(train: AirTrain, dt: number, opt: AirBrakeOptions = DEFA
   // is applied after the valves have been read, to the whole movement.
   if (triggered) dumpBrakePipe(train);
 
-  // The air flow indicator, damped the way the real gauge is. What the head end
-  // had to put in to hold the pipe where it is, which at a steady state is
-  // exactly the whole train's leakage.
-  const instantaneous = dt > 0 ? (fed / dt) * opt.flowCfmPerPsiPerSecond : 0;
+  // The air flow indicator, damped the way the real gauge is.
+  //
+  // The total the compressor is putting in: what the head end fed, plus every
+  // car the pipe had to raise behind it. It used to be the head-end figure
+  // alone, which worked only because propagation was conservative and the whole
+  // train's leakage had to pass through car zero. With a wave it does not, so
+  // the flow has to be summed where it is actually made up.
+  const supplied = fed + made;
+  const instantaneous = dt > 0 ? (supplied / dt) * opt.flowCfmPerPsiPerSecond : 0;
   const blend = opt.flowDampingSeconds > 0 ? clamp(dt / opt.flowDampingSeconds, 0, 1) : 1;
   train.airFlowCfm += (Math.min(instantaneous, 150) - train.airFlowCfm) * blend;
 

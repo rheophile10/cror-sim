@@ -22,7 +22,8 @@ import {
 } from './collision.ts';
 import { EventLog } from './events.ts';
 import { chargeToSteadyState, partHoses } from './airbrake.ts';
-import { buildBridge, type Bridge, type BridgeSpec } from './bridge.ts';
+import { buildBridge, onBridge, type Bridge, type BridgeSpec } from './bridge.ts';
+import { findWashouts, washedOutAt, type Washout } from './washout.ts';
 import {
   buildWildlife,
   DEFAULT_WILDLIFE,
@@ -30,6 +31,7 @@ import {
   roamTo,
   stepWildlife,
   type Animal,
+  type Species,
   type WildlifeOptions,
   type WildlifeSpec,
 } from './wildlife.ts';
@@ -88,7 +90,8 @@ import type { CrossingStyle } from './render/crossings.ts';
 import type { BridgeStyle } from './render/bridge.ts';
 import type { WildlifeStyle } from './render/wildlife.ts';
 import { terraform } from './terraform.ts';
-import { smoothstep } from './units.ts';
+import { throwCar } from './derailment.ts';
+import { clamp, smoothstep } from './units.ts';
 import { Terrain, type TerrainSpec } from './terrain.ts';
 import { TrackPath, type TrackSpec } from './track.ts';
 import { Train, type Car, type TrainSpec } from './train.ts';
@@ -146,6 +149,15 @@ export interface SceneSpec {
   /** How many people the player may work at once. Two — a crew. */
   crewSize?: number;
   /**
+   * Permissible track speed, mph.
+   *
+   * A property of the *railway*, not of a train — it is what the timetable and
+   * the special instructions say for this subdivision. Signals are read against
+   * it: "Clear" permits it, and "Clear to Stop" requires ten mph less than it,
+   * so an aspect cannot be turned into a number without knowing this.
+   */
+  trackSpeedMph?: number;
+  /**
    * Require a body for work that needs one.
    *
    * Off by default, and that default is backwards compatibility rather than a
@@ -165,6 +177,13 @@ export interface SceneSpec {
   crossing?: Partial<CrossingOptions>;
   /** Overrides on how an automatic movement brakes for a signal. */
   dispatch?: Partial<DispatchOptions>;
+  /**
+   * Sea level, metres. Absent or null for a scene with no water table at all.
+   *
+   * Changeable while the scene runs — that is the point of it. See
+   * `washout.ts`.
+   */
+  seaLevel?: number | null;
   /** Moose, wolf packs and bears, salted across the map. */
   wildlife?: WildlifeSpec;
   /** Overrides on what it takes to be hit by something. */
@@ -221,6 +240,16 @@ export class World {
    * a game of moving everybody at once.
    */
   readonly crewSize: number;
+  /** Permissible track speed, mph. See `SceneSpec.trackSpeedMph`. */
+  readonly trackSpeedMph: number;
+  /**
+   * Stretches of railway the water has taken.
+   *
+   * Recomputed whenever the sea level moves. A movement that runs into one goes
+   * on the ground, and nothing on the train can see it coming — which is the
+   * whole reason the rules about washouts are about reporting and protecting.
+   */
+  washouts: Washout[] = [];
   readonly physics: PhysicsOptions;
   readonly collision: CollisionOptions;
   readonly crossingOptions: CrossingOptions;
@@ -248,6 +277,7 @@ export class World {
   private readonly crossingSpec: CrossingSpec[];
   private readonly bridgeSpec: BridgeSpec[];
   private readonly wildlifeSpec: WildlifeSpec;
+  private railCache: { x: number; y: number; track: string; at: number }[] | null = null;
   private readonly peopleSpec: PersonSpec[];
   private readonly crewIds: Set<string>;
 
@@ -269,7 +299,10 @@ export class World {
       const opts = t.toJSON().terraform;
       if (opts === false) continue;
       const spans = this.bridgeSpec
-        .filter((b) => (b.track ?? this.tracks[0]?.id) === t.id)
+        // Road bridges carry no railway and must not exclude one from the
+        // earthworks — and with `track` unset they would otherwise fall back to
+        // the first track and cut a hole in it.
+        .filter((b) => !b.road && (b.track ?? this.tracks[0]?.id) === t.id)
         .map((b) => ({ from: Math.min(b.from, b.to), to: Math.max(b.from, b.to) }));
       terraform(this.terrain, t, { ...(opts ?? {}), spans });
     }
@@ -290,7 +323,9 @@ export class World {
     this.flags = this.flagSpec.map((f, i) => buildFlag(f, i, this.track(f.track)));
     // After the earthworks, so a bent's foot is on the ground as it finally is.
     this.bridges = this.bridgeSpec.map((b, i) =>
-      buildBridge(b, i, this.track(b.track), (x, y) => this.terrain.heightAt(x, y)),
+      buildBridge(b, i, b.road ? this.roadway(b) : this.track(b.track), (x, y) =>
+        this.terrain.heightAt(x, y),
+      ),
     );
     // Salted after the track exists, so nothing is standing on the railway when
     // the scene opens — an animal that starts fouling the line is a strike
@@ -303,6 +338,7 @@ export class World {
     this.peopleSpec = spec.people ?? [];
     this.embodied = spec.embodied ?? false;
     this.crewSize = spec.crewSize ?? 2;
+    this.trackSpeedMph = spec.trackSpeedMph ?? 45;
     this.trains = (spec.trains ?? []).map((t) => new Train(t));
     for (const train of this.trains) this.rebuildRoute(train);
     // People last: somebody may be riding a movement, and placing them needs
@@ -320,6 +356,12 @@ export class World {
     };
     this.collision = { ...DEFAULT_COLLISION, ...spec.collision };
     this.crossingOptions = { ...DEFAULT_CROSSING, ...spec.crossing };
+    // After the bridges, because a trestle standing in a flooded river is doing
+    // its job and must not be reported as a washout.
+    this.sea = spec.seaLevel ?? null;
+    this.washouts = findWashouts(this.tracks, this.terrain, this.sea, (trackId, at) =>
+      onBridge(this.bridges, trackId, at) !== null,
+    );
     this.dispatchOptions = { ...DEFAULT_DISPATCH, ...spec.dispatch };
     this.wildlifeOptions = { ...DEFAULT_WILDLIFE, ...spec.wildlifeOptions };
     // Settle the air as though each movement had been standing coupled to a
@@ -914,15 +956,37 @@ export class World {
    */
   distanceToTrack(x: number, y: number): number {
     let best = Infinity;
-    for (const track of this.tracks) {
-      const step = Math.max(20, track.length / 400);
-      for (let s = 0; s <= track.length; s += step) {
-        const pt = track.at(s);
-        const d = Math.hypot(pt.x - x, pt.y - y);
-        if (d < best) best = d;
-      }
+    // Against the cached samples, not `track.at()`. `at()` interpolates, and
+    // salting wildlife asks this question thousands of times: doing it the
+    // obvious way cost thirty-seven seconds of scene build on a subdivision.
+    for (const p of this.railPoints()) {
+      const dx = p.x - x;
+      if (dx > best || dx < -best) continue;
+      const d = Math.hypot(dx, p.y - y);
+      if (d < best) best = d;
     }
     return best;
+  }
+
+  /**
+   * Every track's samples, thinned and flattened, built once.
+   *
+   * Coarse on purpose — one point every forty metres or so is plenty for "is
+   * this spot on the railway", and the whole array has to be walked per query.
+   */
+  private railPoints(): { x: number; y: number; track: string; at: number }[] {
+    if (this.railCache) return this.railCache;
+    const out: { x: number; y: number; track: string; at: number }[] = [];
+    for (const track of this.tracks) {
+      const samples = track.samples;
+      const stride = Math.max(1, Math.round(40 / Math.max(1, track.length / samples.length)));
+      for (let i = 0; i < samples.length; i += stride) {
+        const p = samples[i]!;
+        out.push({ x: p.x, y: p.y, track: track.id, at: p.s });
+      }
+    }
+    this.railCache = out;
+    return out;
   }
 
   /**
@@ -934,25 +998,27 @@ export class World {
    * simply a long way off to one side of it.
    */
   nearestTrackPoint(x: number, y: number): { track: string; at: number; offset: number } | null {
-    let best: { track: string; at: number; offset: number } | null = null;
+    let found: { track: string; at: number } | null = null;
     let bestD = Infinity;
-    for (const track of this.tracks) {
-      const step = Math.max(10, track.length / 600);
-      for (let s = 0; s <= track.length; s += step) {
-        const pt = track.at(s);
-        const d = Math.hypot(pt.x - x, pt.y - y);
-        if (d >= bestD) continue;
-        bestD = d;
-        const dx = x - pt.x;
-        const dy = y - pt.y;
-        best = {
-          track: track.id,
-          at: s,
-          offset: dx * Math.sin(pt.heading) - dy * Math.cos(pt.heading),
-        };
-      }
+    for (const p of this.railPoints()) {
+      const dx = p.x - x;
+      if (dx > bestD || dx < -bestD) continue;
+      const d = Math.hypot(dx, p.y - y);
+      if (d >= bestD) continue;
+      bestD = d;
+      found = { track: p.track, at: p.at };
     }
-    return best;
+    if (!found) return null;
+    // The offset is worked out from the track itself, once, so the coarse
+    // sampling above costs nothing in accuracy where it matters.
+    const track = this.track(found.track);
+    if (!track) return null;
+    const pt = track.at(found.at);
+    return {
+      track: found.track,
+      at: found.at,
+      offset: (x - pt.x) * Math.sin(pt.heading) - (y - pt.y) * Math.cos(pt.heading),
+    };
   }
 
   /** Whoever is at the controls of a movement, if anybody is. */
@@ -1057,7 +1123,23 @@ export class World {
     // Crossings before the traffic, so a car braking this step is braking for
     // the state the railway is actually in rather than last frame's.
     stepCrossings(this.crossings, this.crossingOccupants(), dt, this.crossingOptions);
+    // Anything standing in a washout is standing on nothing. Checked after the
+    // movements have been stepped, so a train that has just run into one is on
+    // the ground in the same frame rather than a frame late.
+    if (this.washouts.length > 0) this.checkWashouts();
     stepScenery(this.scenery, dt, this.crossings);
+    // Traffic that has run off the end of its road has left the district. It is
+    // taken off the map and another vehicle is put on somewhere else, which is
+    // what keeps the roads busy without the same four cars looping round for
+    // ever — and without the teleport that wrapping produced when the roads
+    // were extended to the edges of the map.
+    for (let i = this.scenery.vehicles.length - 1; i >= 0; i--) {
+      const v = this.scenery.vehicles[i]!;
+      if (v.wrecked || !v.road) continue;
+      if (v.along >= -20 && v.along <= v.road.length + 20) continue;
+      this.scenery.vehicles.splice(i, 1);
+      this.spawnVehicle();
+    }
     // The animals, and everything else the country does to anybody standing in
     // it. Always run, even with no animals in the scene: this pass is also what
     // resolves being run down on a road and being drowned, and guarding it on
@@ -1075,6 +1157,9 @@ export class World {
         events: this.events,
         time: this.time + dt,
         inWater: (x, y) => inWater(this.scenery, x, y),
+        // One out, one in: a country whose population only ever falls is one
+        // you stop seeing anything in after twenty minutes.
+        spawn: (species) => void this.spawnAnimal(species),
       },
       dt,
       this.wildlifeOptions,
@@ -1236,6 +1321,266 @@ export class World {
     crossing.flaggedBy = null;
     this.events.emit({ kind: 'crossing-released', at: this.time, by, subject: crossingId });
     return true;
+  }
+
+  /**
+   * A road, presented as something a bridge can be built along — and lifted
+   * clear of the water while we are here.
+   *
+   * The deck is set flat across the span at the height of its ends, which is
+   * what a short road bridge is, and the road's own samples are raised to match
+   * so the carriageway and the structure agree. Without that the bridge appears
+   * under a road that still dips into the river.
+   */
+  private roadway(spec: BridgeSpec): { at(s: number): { x: number; y: number; z: number; heading: number }; length: number } | undefined {
+    const road = this.scenery.roads.find((r) => r.id === spec.road);
+    if (!road || road.samples.length < 2) return undefined;
+    const spacing = road.length / (road.samples.length - 1);
+    const from = Math.min(spec.from, spec.to);
+    const to = Math.max(spec.from, spec.to);
+    const i0 = Math.max(0, Math.floor(from / spacing));
+    const i1 = Math.min(road.samples.length - 1, Math.ceil(to / spacing));
+    // High enough to clear whatever it is crossing. Taking the ends alone gives
+    // a deck at the height of two banks that may themselves be under water —
+    // which is how a "bridge" ended up with negative clearance.
+    let water = -Infinity;
+    for (let i = i0; i <= i1; i++) {
+      const p = road.samples[i]!;
+      for (const lake of this.scenery.lakes) {
+        if (Math.hypot(p.x - lake.cx, p.y - lake.cy) < 2000) water = Math.max(water, lake.level);
+      }
+      for (const river of this.scenery.rivers) {
+        for (let j = 0; j < river.left.length; j++) {
+          const l = river.left[j]!;
+          if (Math.hypot(p.x - l.x, p.y - l.y) < 300) {
+            water = Math.max(water, river.levels[j] ?? river.level);
+          }
+        }
+      }
+    }
+    const deck = Math.max(
+      road.samples[i0]!.z,
+      road.samples[i1]!.z,
+      water > -Infinity ? water + 3 : -Infinity,
+    );
+    for (let i = i0; i <= i1; i++) road.samples[i]!.z = deck;
+
+    return {
+      length: road.length,
+      at: (s: number) => {
+        const i = Math.max(0, Math.min(road.samples.length - 1, Math.round(s / spacing)));
+        const p = road.samples[i]!;
+        return { x: p.x, y: p.y, z: p.z, heading: p.heading };
+      },
+    };
+  }
+
+  /** Throw off the rails anything that has run onto a stretch that is not there. */
+  private checkWashouts(): void {
+    for (const train of this.trains) {
+      const route = train.route;
+      if (!route) continue;
+      for (const car of train.cars) {
+        if (car.derailed) continue;
+        const loc = route.locate(car.s);
+        const hole = washedOutAt(this.washouts, loc.track.id, loc.at);
+        if (!hole) continue;
+        throwCar(
+          train,
+          car,
+          route.at(car.s),
+          train.derailSide,
+          clamp(Math.abs(car.v) / 5, 0.5, 2.2),
+          this.physics.derailment,
+          this.physics.derailment.kick * 0.8,
+          `Car ${car.id} (${car.label}) went into the water at a washout on ${loc.track.id}` +
+            ` at ${(loc.at / 1000).toFixed(2)} km.`,
+        );
+        this.events.emit({
+          kind: 'washout',
+          at: this.time,
+          subject: car.id,
+          detail: { train: train.id, track: loc.track.id, at: Math.round(loc.at), struck: true },
+        });
+      }
+    }
+  }
+
+  /** Sea level, metres, or null for a scene with no water table. */
+  get seaLevel(): number | null {
+    return this.sea;
+  }
+
+  /**
+   * Move the sea, and work out what it has taken.
+   *
+   * The washouts are recomputed here rather than every step: the level only
+   * changes when somebody changes it, and walking every track is not free.
+   */
+  set seaLevel(level: number | null) {
+    if (level === this.sea) return;
+    this.sea = level;
+    this.refreshWashouts();
+  }
+
+  /** The one global fact a rulebook would ask for first. */
+  get trackWashedOut(): boolean {
+    return this.washouts.length > 0;
+  }
+
+  private refreshWashouts(): void {
+    const before = this.washouts.length;
+    this.washouts = findWashouts(this.tracks, this.terrain, this.sea, (trackId, at) =>
+      onBridge(this.bridges, trackId, at) !== null,
+    );
+    if (this.washouts.length === before) return;
+    this.events.emit({
+      kind: this.washouts.length > before ? 'washout' : 'washout-cleared',
+      at: this.time,
+      detail: {
+        spans: this.washouts.length,
+        metres: Math.round(this.washouts.reduce((m, w) => m + (w.to - w.from), 0)),
+        seaLevel: this.sea ?? 0,
+      },
+    });
+  }
+
+  /**
+   * Put another animal on the map, somewhere clear of the railway.
+   *
+   * Used to replace one that has been eaten and by the settings that let a
+   * scene be made busier or emptier while it runs. Seeded off how many have
+   * been placed so far, so a session is repeatable.
+   */
+  spawnAnimal(species: Species, pack: string | null = null): Animal {
+    const [fresh] = buildWildlife(
+      {
+        seed: 9973 * (this.animals.length + 1) + Math.floor(this.time * 7),
+        clearance: this.wildlifeSpec.clearance ?? 90,
+        animals: [{ species, at: [0, 0], pack: pack ?? undefined }],
+      },
+      this.terrain,
+      (x, y) => this.distanceToTrack(x, y),
+    );
+    // `buildWildlife` places a listed animal exactly where it is told, so the
+    // scatter has to be done here — the point of a replacement is that it turns
+    // up somewhere else.
+    const cs = this.terrain.cellSize;
+    const rand = (n: number) => ((Math.sin(n * 12.9898) * 43758.5453) % 1 + 1) % 1;
+    const seed = this.animals.length * 31 + Math.floor(this.time);
+    for (let tries = 0; tries < 40; tries++) {
+      const x = rand(seed + tries * 3) * this.terrain.cols * cs;
+      const y = rand(seed + tries * 3 + 1) * this.terrain.rows * cs;
+      if (this.distanceToTrack(x, y) < (this.wildlifeSpec.clearance ?? 90)) continue;
+      fresh!.x = x;
+      fresh!.y = y;
+      break;
+    }
+    fresh!.id = `${species}-${this.animals.length}-${Math.floor(this.time)}`;
+    fresh!.homeX = fresh!.x;
+    fresh!.homeY = fresh!.y;
+    fresh!.goalX = fresh!.x;
+    fresh!.goalY = fresh!.y;
+    fresh!.z = this.terrain.heightAt(fresh!.x, fresh!.y);
+    this.animals.push(fresh!);
+    return fresh!;
+  }
+
+  /** Take the oldest dead one off the map, or a live one if none has died. */
+  removeAnimal(species?: Species): boolean {
+    const idx = this.animals.findIndex(
+      (a) => (!species || a.species === species) && a.state === 'dead',
+    );
+    const i = idx >= 0 ? idx : this.animals.findIndex((a) => !species || a.species === species);
+    if (i < 0) return false;
+    this.animals.splice(i, 1);
+    return true;
+  }
+
+  /**
+   * Another trespasser, somewhere along the railway.
+   *
+   * They are `Person`s, so they arrive subject to every hazard the crew are —
+   * which is the whole reason they are worth having.
+   */
+  spawnTrespasser(): Person | null {
+    const track = this.tracks[Math.floor(this.spawnRoll() * this.tracks.length) % this.tracks.length];
+    if (!track) return null;
+    const person = buildPerson(
+      {
+        id: `tres-${this.people.length}-${Math.floor(this.time)}`,
+        name: `Trespasser ${this.people.filter((p) => p.role === 'trespasser').length + 1}`,
+        role: 'trespasser',
+        track: track.id,
+        at: this.spawnRoll() * track.length,
+        offset: (this.spawnRoll() - 0.5) * 80,
+      },
+      this.people.length,
+    );
+    this.people.push(person);
+    locate(person, this.personContext());
+    return person;
+  }
+
+  /** Take a trespasser off the map. Never one of the crew. */
+  removeTrespasser(): boolean {
+    const i = this.people.findIndex((p) => p.role === 'trespasser');
+    if (i < 0) return false;
+    this.people.splice(i, 1);
+    return true;
+  }
+
+  /** Another vehicle, on a road chosen at random, going one way or the other. */
+  spawnVehicle(): boolean {
+    const roads = this.scenery.roads;
+    if (roads.length === 0) return false;
+    const road = roads[Math.floor(this.spawnRoll() * roads.length) % roads.length]!;
+    const kinds = ['car', 'car', 'truck', 'car', 'semi', 'bus'] as const;
+    const extra = buildScenery(
+      [
+        {
+          kind: 'vehicle',
+          road: road.id,
+          along: this.spawnRoll() * road.length,
+          speed: (this.spawnRoll() < 0.5 ? 1 : -1) * (11 + this.spawnRoll() * 8),
+          type: kinds[Math.floor(this.spawnRoll() * kinds.length) % kinds.length],
+        },
+      ],
+      this.terrain,
+      this.tracks,
+    );
+    const made = extra.vehicles[0];
+    if (!made) return false;
+    // Built against a throwaway scenery, so it points at a throwaway road.
+    made.road = road;
+    this.scenery.vehicles.push(made);
+    return true;
+  }
+
+  removeVehicle(): boolean {
+    // A wreck is scenery and stays; anything still driving can go.
+    const i = this.scenery.vehicles.findIndex((v) => !v.wrecked);
+    if (i < 0) return false;
+    this.scenery.vehicles.splice(i, 1);
+    return true;
+  }
+
+  /** A repeatable pseudo-random draw, so a session can be replayed. */
+  private sea: number | null = null;
+  private spawnSeed = 1;
+  private spawnRoll(): number {
+    this.spawnSeed = (this.spawnSeed * 1664525 + 1013904223) >>> 0;
+    return this.spawnSeed / 4294967296;
+  }
+
+  /** How many of each species are alive. */
+  census(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const a of this.animals) {
+      if (a.state === 'dead') continue;
+      out[a.species] = (out[a.species] ?? 0) + 1;
+    }
+    return out;
   }
 
   /** Log what the alerter and the PCS did to a train by themselves. */
@@ -1534,6 +1879,9 @@ export class World {
       signals: this.signalSpec,
       flags: this.flagSpec,
       embodied: this.embodied,
+      crewSize: this.crewSize,
+      trackSpeedMph: this.trackSpeedMph,
+      seaLevel: this.sea,
       // Serialised from live state, not from the spec: a person walks, and a
       // scene saved mid-tour should reload with them where they got to.
       people: this.people.map((p) => ({
@@ -1552,6 +1900,7 @@ export class World {
         id: b.id,
         label: b.label,
         track: b.trackId,
+        road: b.roadId,
         from: b.from,
         to: b.to,
         kind: b.kind,

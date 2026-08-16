@@ -221,9 +221,20 @@ export class Terrain {
     const nx = this.cols + 1;
     const ny = this.rows + 1;
     this.heights = new Float64Array(nx * ny);
-    for (let r = 0; r < ny; r++) {
-      for (let c = 0; c < nx; c++) {
-        this.heights[r * nx + c] = this.evaluate(c, r);
+    this.heights.fill(this.baseElevation);
+    // Each feature is applied over its own footprint rather than every feature
+    // being asked about every node. With a handful of features the difference
+    // did not matter; with the eight hundred a located corridor produces it is
+    // the difference between a scene that loads in a second and one that takes
+    // thirty-seven, because the old way is features × nodes and this is the sum
+    // of the footprints.
+    for (const f of this.features) {
+      const box = footprint(f, this.cols, this.rows);
+      for (let r = box.r0; r <= box.r1; r++) {
+        const row = r * nx;
+        for (let c = box.c0; c <= box.c1; c++) {
+          this.heights[row + c]! += this.contribution(f, c, r);
+        }
       }
     }
     for (const [c, r, z] of spec.nodes ?? []) {
@@ -261,11 +272,13 @@ export class Terrain {
   }
 
   /**
-   * Height at a lattice node in cell coordinates, summed over features. This is
-   * the only place features are interpreted; sampling elsewhere reads the baked
-   * grid, so a feature is evaluated once per node rather than once per frame.
+   * Height at one node, summed over every feature.
+   *
+   * Not used to bake the grid — that goes feature by feature over each one's
+   * footprint — but kept because it is the definition, and because a caller
+   * that wants one height without a grid should have it.
    */
-  private evaluate(c: number, r: number): number {
+  evaluate(c: number, r: number): number {
     let z = this.baseElevation;
     for (const f of this.features) {
       z += this.contribution(f, c, r);
@@ -408,5 +421,55 @@ export class Terrain {
   /** True where the point lies inside the grid footprint. */
   contains(wx: number, wy: number): boolean {
     return wx >= 0 && wy >= 0 && wx <= this.width && wy <= this.depth;
+  }
+}
+
+/**
+ * The block of nodes a feature can possibly affect.
+ *
+ * Radial features reach their radius; a ridge reaches its width either side of
+ * its segment; a ramp is bounded by its own endpoints. Noise is unbounded and
+ * gets the whole grid, which is correct and is why a scene should have one noise
+ * feature rather than twenty.
+ *
+ * Generous by a cell all round: the falloff functions reach zero *at* the
+ * boundary, and clipping a node early would leave a visible seam.
+ */
+function footprint(
+  f: TerrainFeature,
+  cols: number,
+  rows: number,
+): { c0: number; c1: number; r0: number; r1: number } {
+  const all = { c0: 0, c1: cols, r0: 0, r1: rows };
+  const clip = (x0: number, x1: number, y0: number, y1: number) => ({
+    c0: Math.max(0, Math.floor(x0) - 1),
+    c1: Math.min(cols, Math.ceil(x1) + 1),
+    r0: Math.max(0, Math.floor(y0) - 1),
+    r1: Math.min(rows, Math.ceil(y1) + 1),
+  });
+  switch (f.kind) {
+    case 'noise':
+      return all;
+    case 'ridge': {
+      const w = f.width;
+      return clip(
+        Math.min(f.from[0], f.to[0]) - w,
+        Math.max(f.from[0], f.to[0]) + w,
+        Math.min(f.from[1], f.to[1]) - w,
+        Math.max(f.from[1], f.to[1]) + w,
+      );
+    }
+    case 'ramp':
+      // Not bounded by its endpoints: a ramp **holds its top height past `to`**
+      // so that track can run out onto the summit, and it has no lateral limit
+      // at all unless it was given a width. Clipping it to the segment cut the
+      // plateau off, which the ramp test caught immediately.
+      return all;
+    default: {
+      // A hill, possibly squashed into an oval and rotated: the safe bound is
+      // its longest radius in every direction.
+      const reach = f.radius * Math.max(1, 1 / Math.max(1e-6, f.aspect ?? 1));
+      return clip(f.x - reach, f.x + reach, f.y - reach, f.y + reach);
+    }
   }
 }

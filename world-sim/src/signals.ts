@@ -749,6 +749,17 @@ export function resolveSignals(
   occupancy: readonly { trackId: string; from: number; to: number }[],
   network?: Network,
 ): void {
+  // With a network to walk, a block runs from a signal to the next one facing
+  // the same way **through the turnouts**, which is what a block actually is.
+  // Without one, it can only run to the end of the signal's own track.
+  //
+  // This mattered the moment a main track was cut into segments at every
+  // switch: each signal's block ended at its own segment boundary, so a train
+  // one segment ahead was invisible and nothing ever showed Stop for it.
+  if (network) {
+    resolveAcrossNetwork(signals, occupancy, network);
+    return;
+  }
   const byTrack = new Map<string, Signal[]>();
   for (const signal of signals) {
     if (signal.control === 'fixed' || !signal.trackId) continue;
@@ -783,6 +794,117 @@ export function resolveSignals(
     }
   }
 }
+
+/**
+ * Resolve every signal against blocks that follow the railway.
+ *
+ * For each signal, a route is walked forward from it in the direction it faces
+ * until the next signal facing the same way. Everything between the two is the
+ * block, and the aspect follows from whether anything is standing in it and
+ * from what the signal at the far end is showing.
+ *
+ * Settled far-to-near in one pass so a signal reads a neighbour that has
+ * already been decided this step — which is what makes an approach aspect step
+ * back from a Stop rather than lagging a frame behind it.
+ */
+function resolveAcrossNetwork(
+  signals: readonly Signal[],
+  occupancy: readonly { trackId: string; from: number; to: number }[],
+  network: Network,
+): void {
+  const live = signals.filter((s) => s.control !== 'fixed' && s.trackId);
+  for (const signal of live) {
+    if (signal.control === 'controlled') signal.divergingRoute = divergingAhead(network, signal);
+  }
+
+  // The block ahead of each signal, and which signal closes it.
+  const blocks = new Map<Signal, { spans: Span[]; next: Signal | null }>();
+  for (const signal of live) blocks.set(signal, blockAhead(signal, live, network));
+
+  // Order them so a signal is settled after the one it reads. A signal's
+  // "next" forms a chain; resolving by how far each is from the end of its
+  // chain settles them far-to-near without needing the chain to be a line.
+  const depth = new Map<Signal, number>();
+  const depthOf = (s: Signal, seen: Set<Signal>): number => {
+    const cached = depth.get(s);
+    if (cached !== undefined) return cached;
+    if (seen.has(s)) return 0;
+    seen.add(s);
+    const next = blocks.get(s)?.next ?? null;
+    const d = next ? depthOf(next, seen) + 1 : 0;
+    depth.set(s, d);
+    return d;
+  };
+  for (const s of live) depthOf(s, new Set());
+
+  for (const signal of [...live].sort((a, b) => (depth.get(a) ?? 0) - (depth.get(b) ?? 0))) {
+    const block = blocks.get(signal)!;
+    const occupied = block.spans.some((span) =>
+      occupancy.some((o) => o.trackId === span.trackId && o.to > span.from && o.from < span.to),
+    );
+    const ahead = block.next;
+    signal.aspect = aspectFor(signal, occupied, ahead, ahead ? ahead.aspect.passing : 'normal');
+  }
+}
+
+interface Span {
+  trackId: string;
+  from: number;
+  to: number;
+}
+
+/**
+ * The stretch of railway a signal governs, and the signal that closes it.
+ *
+ * Walked through the network rather than along one track, so a block crosses
+ * switches exactly as a movement does. The walk is bounded: a signal with
+ * nothing ahead of it governs as far as the route can be built and no further,
+ * which is the honest answer for the last signal on a subdivision.
+ */
+function blockAhead(
+  signal: Signal,
+  signals: readonly Signal[],
+  network: Network,
+): { spans: Span[]; next: Signal | null } {
+  const track = network.tracks.get(signal.trackId!);
+  if (!track) return { spans: [], next: null };
+  const dir = signal.facing === 'up' ? 1 : -1;
+  const route = buildRoute(network, { track, at: signal.at, dir }, BLOCK_REACH, 0);
+
+  const spans: Span[] = [];
+  let next: Signal | null = null;
+  for (const leg of route.legs) {
+    const lo = Math.min(leg.from, leg.to);
+    const hi = Math.max(leg.from, leg.to);
+    // The nearest signal on this leg facing the same way as the movement is
+    // travelling over it, beyond where this one stands.
+    let best: { signal: Signal; along: number } | null = null;
+    for (const other of signals) {
+      if (other === signal || other.trackId !== leg.track.id) continue;
+      if (other.at < lo || other.at > hi) continue;
+      // Facing the way this leg is being travelled, and ahead of the start.
+      const along = leg.start + (other.at - leg.from) * leg.dir;
+      if (along <= 1) continue;
+      const sameWay = (other.facing === 'up' ? 1 : -1) === leg.dir;
+      if (!sameWay) continue;
+      if (!best || along < best.along) best = { signal: other, along };
+    }
+    if (best) {
+      spans.push({
+        trackId: leg.track.id,
+        from: Math.min(leg.from, best.signal.at),
+        to: Math.max(leg.from, best.signal.at),
+      });
+      next = best.signal;
+      break;
+    }
+    spans.push({ trackId: leg.track.id, from: lo, to: hi });
+  }
+  return { spans, next };
+}
+
+/** How far a block is allowed to run before it is simply "the road ahead". */
+const BLOCK_REACH = 12_000;
 
 function aspectFor(
   signal: Signal,

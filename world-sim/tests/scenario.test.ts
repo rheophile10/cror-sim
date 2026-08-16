@@ -89,12 +89,16 @@ test('a tour: down, line the switch, back in, tie handbrakes, walk back, restore
   //    being right, and it is exactly the mistake the feature exists to expose.
   // Releasing takes time too — the pipe has to be recharged and every cylinder
   // exhausted — so the movement does not start the instant the handle moves.
+  // These durations are short because the release now works: the brake pipe
+  // propagates as a wave rather than by conservative diffusion, so a train
+  // actually comes off the brakes and this ran the length of the siding and
+  // trailed through the far switch when it was first re-timed.
   train.brake = 0;
-  train.throttle = 0.25;
-  run(150);
+  train.throttle = 0.2;
+  run(60);
   train.throttle = 0;
   train.brake = 1;
-  run(90);
+  run(120);
   const standing = world.trackFor(train)!.id;
   assert.equal(standing, 'siding', `the movement is in the siding, not on ${standing}`);
   assert.equal(train.derailedCount, 0, 'and it got there without incident');

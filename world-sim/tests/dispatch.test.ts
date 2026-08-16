@@ -216,10 +216,10 @@ test('an automatic driver survives a round trip through the scene JSON', () => {
 
 test('believing you can stop harder than you can is how a signal gets overrun', () => {
   // The default rate is deliberately gentle because a loaded freight is. Tell
-  // the driver it can stop at 0.9 m/s² — which this train cannot — and it runs
+  // the driver it can stop at 3 m/s² — which nothing on rails can — and it runs
   // straight past the Stop it was braking for. That is not a bug in the
   // controller; it is the reason the default is what it is.
-  const optimistic = new World(line({ dispatch: { brakingRate: 0.9 } }));
+  const optimistic = new World(line({ dispatch: { brakingRate: 3 } }));
   const honest = new World(line({ dispatch: DEFAULT_DISPATCH }));
   for (const w of [optimistic, honest]) run(w, 900);
 

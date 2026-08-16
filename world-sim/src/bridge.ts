@@ -33,7 +33,16 @@ export interface BridgeSpec {
   label?: string;
   /** Which track it carries. Defaults to the scene's first. */
   track?: string;
-  /** Mileage of each end along that track, metres. */
+  /**
+   * Or which **road** it carries, by id.
+   *
+   * A road crossing a river has the same problem the railway does and the same
+   * answer: it cannot simply dip into the water. Given a road, the deck is
+   * lifted clear of the surface across the span and this structure is put under
+   * it — the same bents, drawn by the same code.
+   */
+  road?: string;
+  /** Distance of each end along that track or road, metres. */
   from: number;
   to: number;
   kind?: BridgeKind;
@@ -62,6 +71,7 @@ export interface Bridge {
   id: string;
   label: string;
   trackId: string | undefined;
+  roadId: string | undefined;
   from: number;
   to: number;
   kind: BridgeKind;
@@ -94,7 +104,8 @@ export function buildBridge(
   const bridge: Bridge = {
     id: spec.id ?? `bridge-${index}`,
     label: spec.label ?? `Bridge ${index + 1}`,
-    trackId: spec.track,
+    trackId: spec.road ? undefined : spec.track,
+    roadId: spec.road,
     from,
     to,
     kind,

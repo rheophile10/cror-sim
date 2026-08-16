@@ -12,7 +12,6 @@ import {
   HORN_SIGNALS,
   hornSounding,
   Renderer,
-  SPEED_LIMITS,
   task,
   World,
   kgToTonnes,
@@ -67,6 +66,27 @@ const el = {
   rotateL: $<HTMLButtonElement>('rotateL'),
   rotateR: $<HTMLButtonElement>('rotateR'),
   toggleJson: $<HTMLButtonElement>('toggleJson'),
+  viewMenu: $<HTMLButtonElement>('viewMenu'),
+  viewPanel: $<HTMLDivElement>('viewPanel'),
+  showTelemetry: $<HTMLInputElement>('showTelemetry'),
+  showView: $<HTMLInputElement>('showView'),
+  worldMenu: $<HTMLButtonElement>('worldMenu'),
+  worldPanel: $<HTMLDivElement>('worldPanel'),
+  nMoose: $<HTMLInputElement>('nMoose'),
+  nWolves: $<HTMLInputElement>('nWolves'),
+  nBears: $<HTMLInputElement>('nBears'),
+  nTres: $<HTMLInputElement>('nTres'),
+  nTraffic: $<HTMLInputElement>('nTraffic'),
+  nMooseOut: $<HTMLOutputElement>('nMooseOut'),
+  nWolvesOut: $<HTMLOutputElement>('nWolvesOut'),
+  nBearsOut: $<HTMLOutputElement>('nBearsOut'),
+  nTresOut: $<HTMLOutputElement>('nTresOut'),
+  nTrafficOut: $<HTMLOutputElement>('nTrafficOut'),
+  sea: $<HTMLInputElement>('sea'),
+  seaOut: $<HTMLOutputElement>('seaOut'),
+  washoutNote: $<HTMLParagraphElement>('washoutNote'),
+  telemetrySection: $<HTMLElement>('telemetrySection'),
+  viewSection: $<HTMLElement>('viewSection'),
   throttle: $<HTMLInputElement>('throttle'),
   throttleOut: $<HTMLOutputElement>('throttleOut'),
   brake: $<HTMLInputElement>('brake'),
@@ -81,6 +101,8 @@ const el = {
   sand: $<HTMLButtonElement>('sand'),
   ack: $<HTMLButtonElement>('ack'),
   cabWarn: $<HTMLParagraphElement>('cabWarn'),
+  speedNow: $('speedNow'),
+  trackSpeed: $('trackSpeed'),
   headlight: $<HTMLSelectElement>('headlight'),
   ditch: $<HTMLButtonElement>('ditch'),
   bell: $<HTMLButtonElement>('bell'),
@@ -96,15 +118,6 @@ const el = {
   optForces: $<HTMLInputElement>('optForces'),
   optLabels: $<HTMLInputElement>('optLabels'),
   stats: $<HTMLParagraphElement>('stats'),
-  signalSection: $<HTMLElement>('signalSection'),
-  aspectName: $<HTMLParagraphElement>('aspectName'),
-  aspectIndication: $<HTMLParagraphElement>('aspectIndication'),
-  sigDistance: $('sigDistance'),
-  sigPermits: $('sigPermits'),
-  sigNext: $('sigNext'),
-  controlled: $<HTMLDivElement>('controlled'),
-  tapeSection: $<HTMLElement>('tapeSection'),
-  tape: $<HTMLOListElement>('tape'),
   crewSection: $<HTMLElement>('crewSection'),
   crew: $<HTMLDivElement>('crew'),
   crewDoing: $<HTMLParagraphElement>('crewDoing'),
@@ -249,8 +262,6 @@ function syncStudyActions(personId: string | null): void {
   el.studyActions.append(btn);
 }
 
-/** Which controlled signals the panel is currently offering. */
-let controlledSignature = '';
 /** Horn and bell. Silent until the first click; see `sound.ts`. */
 const sound = new Sound();
 let detachControls: (() => void) | null = null;
@@ -259,8 +270,6 @@ let playing = true;
 let following = false;
 /** The most recent impact, kept so the readout does not blink out immediately. */
 let lastImpact: { what: string; closing: number; derailed: boolean } | null = null;
-/** Signals passed, newest first — the engineer's tape. */
-const tape: { text: string; fault: boolean }[] = [];
 /** Which crew member the panels act on. */
 let selected: string | null = null;
 const baseHint = document.querySelector('.hint')?.textContent ?? '';
@@ -315,10 +324,6 @@ function loadScene(spec: SceneSpec, keepCamera = false): void {
   selected = world.crew[0]?.id ?? null;
   offeredSignature = '';
   buildCrewPanel();
-  buildSignalPanel();
-  tape.length = 0;
-  el.tape.replaceChildren();
-  el.tapeSection.hidden = true;
   lastImpact = null;
   syncControlLabels();
   syncPitch();
@@ -460,6 +465,13 @@ function updateCabControls(): void {
   el.dynamic.value = String(Math.round(train.dynamic * 100));
   el.reverser.value = train.reverser;
   el.sand.dataset.on = String(train.sand);
+  // What you are doing against what you are allowed to do. Without the second
+  // figure an aspect like "reduce to ten below permissible track speed" is not
+  // an instruction, it is a riddle.
+  const mph = Math.abs(mpsToMph(train.speed));
+  el.speedNow.textContent = `${mph.toFixed(0)} mph`;
+  el.speedNow.dataset.over = String(mph > world.trackSpeedMph + 1);
+  el.trackSpeed.textContent = `${world.trackSpeedMph} mph`;
   el.headlight.value = train.lights.front;
   el.ditch.dataset.on = String(train.lights.ditch);
   el.bell.dataset.on = String(train.lights.bell);
@@ -591,104 +603,6 @@ function syncCrewPanel(): void {
   );
 }
 
-/**
- * One button per controlled signal — the RTC's half of the job, standing in for
- * a control machine until there is a proper dispatcher's view. Automatic signals
- * get no button, because there is nothing to press: that is the distinction.
- */
-/** How far either way along the railway the RTC panel offers signals, metres. */
-const RTC_REACH = 9000;
-
-function buildSignalPanel(): void {
-  el.controlled.replaceChildren();
-  el.signalSection.hidden = world.signals.length === 0;
-  for (const signal of nearbyControlled()) {
-    const btn = document.createElement('button');
-    btn.className = 'btn';
-    btn.dataset.signalId = signal.id;
-    btn.addEventListener('click', () => {
-      world.clearSignal(signal.id, !signal.cleared);
-      syncSignalPanel();
-    });
-    el.controlled.append(btn);
-  }
-  syncSignalPanel();
-}
-
-/**
- * Controlled signals near the movement, nearest first.
- *
- * A subdivision has dozens, and a panel listing every one of them is a wall of
- * buttons rather than a control machine. An RTC works a territory; this offers
- * the signals within about nine kilometres either way of the movement, which is
- * the stretch a crew is going to reach next.
- */
-function nearbyControlled() {
-  const controlled = world.signals.filter((s) => s.control === 'controlled');
-  const train = drivenTrain() ?? world.trains[0];
-  const route = train?.route;
-  const lead = train?.cars[0];
-  if (!route || !lead || controlled.length <= 8) return controlled;
-
-  // Straight-line distance rather than distance along the railway. Crude, and
-  // deliberately so: a signal on a siding or a spur has no mileage comparable
-  // with the movement's, and "how far away is it" is the question the panel is
-  // actually asking. Over nine kilometres of a subdivision the two agree closely
-  // enough to put the right dozen signals in front of you.
-  const p = route.at(lead.s);
-  return controlled
-    .map((signal) => ({ signal, gap: Math.hypot(signal.x - p.x, signal.y - p.y) }))
-    .filter((x) => x.gap <= RTC_REACH)
-    .sort((a, b) => a.gap - b.gap)
-    .map((x) => x.signal);
-}
-
-function syncSignalPanel(): void {
-  for (const btn of el.controlled.querySelectorAll<HTMLButtonElement>('button')) {
-    const signal = world.signals.find((s) => s.id === btn.dataset.signalId);
-    if (!signal) continue;
-    btn.dataset.cleared = String(signal.cleared);
-    btn.textContent = `${signal.label ?? signal.id} · ${signal.cleared ? 'cleared' : 'stop'}`;
-    btn.title = signal.cleared
-      ? `${signal.id}: cleared — click to restore it to Stop`
-      : `${signal.id}: displaying Stop — click to clear it`;
-  }
-}
-
-/** The engineer's readout: what is ahead and what it is asking for. */
-function updateSignalReadout(): void {
-  const train = world.trains[0];
-  if (!train || world.signals.length === 0) return;
-  const sighting = world.signalAhead(train, 5000);
-
-  if (!sighting) {
-    el.aspectName.textContent = '—';
-    el.aspectName.dataset.stop = 'false';
-    el.aspectName.dataset.caution = 'false';
-    el.aspectName.dataset.clear = 'false';
-    el.aspectIndication.textContent = 'No signal in sight.';
-    el.sigDistance.textContent = '—';
-    el.sigPermits.textContent = '—';
-    el.sigNext.textContent = '—';
-    return;
-  }
-
-  const { signal, distance } = sighting;
-  const aspect = signal.aspect;
-  el.aspectName.textContent = `${aspect.name}  (${aspect.rule})`;
-  el.aspectName.dataset.stop = String(aspect.passing === 'stop');
-  el.aspectName.dataset.caution = String(aspect.passing !== 'stop' && aspect.next !== 'normal');
-  el.aspectName.dataset.clear = String(aspect.passing === 'normal' && aspect.next === 'normal');
-  el.aspectIndication.textContent = aspect.indication;
-  el.sigDistance.textContent = `${fmt(distance, 0)} m`;
-
-  const say = (cls: string) => {
-    const mph = SPEED_LIMITS[cls as keyof typeof SPEED_LIMITS];
-    return mph === null ? 'track speed' : `${cls} · ${mph} mph`;
-  };
-  el.sigPermits.textContent = say(aspect.passing);
-  el.sigNext.textContent = aspect.advance ? `${say(aspect.next)} (2nd)` : say(aspect.next);
-}
 
 /** Style toggles write straight into the world's style block. */
 function applyStyleOptions(): void {
@@ -697,6 +611,9 @@ function applyStyleOptions(): void {
     ...s.terrain,
     contourInterval: el.optContours.checked ? (s.terrain?.contourInterval ?? 20) : null,
     grid: el.optGrid.checked ? (s.terrain?.grid ?? 'rgba(0,0,0,0.18)') : null,
+    // The sea is a world fact, not a drawing option — but the terrain renderer
+    // already knows how to flood everything below a level, so it is told.
+    waterLevel: world.seaLevel,
   };
   s.train = {
     ...s.train,
@@ -808,29 +725,10 @@ function frame(now: number): void {
       audible ? hornSounding(audible.lights) : false,
       audible?.lights.bell ?? false,
       dt * rate,
+      drivenTrain()?.alerter.state ?? 'quiet',
     );
     for (const hit of world.collisions) {
       lastImpact = { what: hit.what, closing: hit.closing, derailed: hit.derailed };
-    }
-    for (const passing of world.signalsPassed) {
-      const mph = fmt(Math.abs(mpsToMph(passing.speed)), 0);
-      const fault = passing.passedAtStop || passing.overspeed;
-      tape.unshift({
-        text:
-          `${passing.signal.label ?? passing.signal.id} · ${passing.aspect.name} · ${mph} mph` +
-          (passing.passedAtStop ? ' — PASSED AT STOP' : passing.overspeed ? ' — over speed' : ''),
-        fault,
-      });
-      tape.length = Math.min(tape.length, 12);
-      el.tapeSection.hidden = false;
-      el.tape.replaceChildren(
-        ...tape.map((entry) => {
-          const li = document.createElement('li');
-          li.textContent = entry.text;
-          li.dataset.fault = String(entry.fault);
-          return li;
-        }),
-      );
     }
     if (following) {
       const train = world.trains[0];
@@ -843,21 +741,17 @@ function frame(now: number): void {
   }
   renderer.render();
   updateInstruments();
-  updateSignalReadout();
   updateCabControls();
-  // The RTC panel follows the movement, so the signals on offer are the ones it
-  // is coming to. Rebuilt only when the set actually changes.
-  const ids = nearbyControlled().map((s) => s.id).join(',');
-  if (ids !== controlledSignature) {
-    controlledSignature = ids;
-    buildSignalPanel();
-  }
   // The card's flashing lamps run on wall-clock time, not simulated time: a
   // flashing aspect flashes at its own rate whatever the rate multiplier says.
   if (test && !test.done) {
     const card = test.card;
     const ctx = el.testCanvas.getContext('2d');
     if (card && ctx) drawSignalCard(ctx, card, now / 1000);
+  }
+  if (!el.worldPanel.hidden) {
+    applyWorldCounts();
+    syncWashoutNote();
   }
   // What a person can reach changes with every step they take.
   if (world.people.length > 0) syncCrewPanel();
@@ -1069,6 +963,129 @@ document.addEventListener('pointerdown', () => sound.unlock(), { once: true });
 for (const box of [el.optContours, el.optGrid, el.optForces, el.optLabels]) {
   box.addEventListener('change', applyStyleOptions);
 }
+
+// ── The View menu ─────────────────────────────────────────────────────────
+//
+// Telemetry and the view options are instrumentation, not part of the job. They
+// are off unless asked for, so what is on screen by default is the railway and
+// the controls — which is what an engineer has.
+function syncViewMenu(): void {
+  el.telemetrySection.hidden = !el.showTelemetry.checked;
+  el.viewSection.hidden = !el.showView.checked;
+}
+// ── The World menu ────────────────────────────────────────────────────────
+//
+// How busy the country is, as five numbers. Applied by adding or taking away
+// rather than by rebuilding the scene: a rebuild is two seconds and would throw
+// away wherever the train had got to.
+function syncWorldCounts(fromWorld = false): void {
+  const census = world.census();
+  if (fromWorld) {
+    el.nMoose.value = String(census.moose ?? 0);
+    el.nWolves.value = String(census.wolf ?? 0);
+    el.nBears.value = String(census.bear ?? 0);
+    el.nTres.value = String(world.people.filter((p) => p.role === 'trespasser').length);
+    el.nTraffic.value = String(world.scenery.vehicles.filter((v) => !v.wrecked).length);
+  }
+  el.nMooseOut.textContent = el.nMoose.value;
+  el.nWolvesOut.textContent = el.nWolves.value;
+  el.nBearsOut.textContent = el.nBears.value;
+  el.nTresOut.textContent = el.nTres.value;
+  el.nTrafficOut.textContent = el.nTraffic.value;
+}
+
+/**
+ * The sea, and what it has taken.
+ *
+ * Below the slider's floor there is no water table at all, which is a different
+ * thing from a sea at zero — a scene inland has no sea, and saying so is worth
+ * one position on the scale.
+ */
+function applySeaLevel(): void {
+  const raw = Number(el.sea.value);
+  world.seaLevel = raw < 0 ? null : raw;
+  el.seaOut.textContent = raw < 0 ? 'off' : `${raw} m`;
+  applyStyleOptions();
+  syncWashoutNote();
+}
+
+function syncWashoutNote(): void {
+  if (!world.trackWashedOut) {
+    el.washoutNote.textContent =
+      world.seaLevel === null
+        ? 'No water table. Raise it and the low ground floods; raise it to the ties and the railway is gone.'
+        : `Water at ${world.seaLevel} m. The railway is clear of it.`;
+    el.washoutNote.dataset.state = 'ok';
+    return;
+  }
+  const metres = world.washouts.reduce((m, x) => m + (x.to - x.from), 0);
+  el.washoutNote.textContent =
+    `TRACK WASHED OUT — ${world.washouts.length} ` +
+    `${world.washouts.length === 1 ? 'stretch' : 'stretches'}, ${Math.round(metres)} m of railway ` +
+    `in the water. Nothing on the train can see it coming.`;
+  el.washoutNote.dataset.state = 'bad';
+}
+
+function applyWorldCounts(): void {
+  const census = world.census();
+  for (const [species, input] of [
+    ['moose', el.nMoose],
+    ['wolf', el.nWolves],
+    ['bear', el.nBears],
+  ] as const) {
+    const want = Number(input.value);
+    let have = census[species] ?? 0;
+    // A few at a time: dragging a slider fires on every pixel, and adding
+    // eighty animals in one frame is a visible stall.
+    for (let i = 0; i < 6 && have < want; i++, have++) world.spawnAnimal(species);
+    for (let i = 0; i < 6 && have > want; i++, have--) world.removeAnimal(species);
+  }
+  const wantTres = Number(el.nTres.value);
+  let tres = world.people.filter((p) => p.role === 'trespasser').length;
+  for (let i = 0; i < 4 && tres < wantTres; i++, tres++) world.spawnTrespasser();
+  for (let i = 0; i < 4 && tres > wantTres; i++, tres--) world.removeTrespasser();
+
+  const wantTraffic = Number(el.nTraffic.value);
+  let cars = world.scenery.vehicles.filter((v) => !v.wrecked).length;
+  for (let i = 0; i < 8 && cars < wantTraffic; i++, cars++) world.spawnVehicle();
+  for (let i = 0; i < 8 && cars > wantTraffic; i++, cars--) world.removeVehicle();
+  syncWorldCounts();
+}
+
+el.worldMenu.addEventListener('click', () => {
+  const open = el.worldPanel.hidden;
+  if (open) syncWorldCounts(true);
+  el.worldPanel.hidden = !open;
+  el.worldMenu.setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('click', (e) => {
+  if (el.worldPanel.hidden) return;
+  const t = e.target as Node;
+  if (el.worldPanel.contains(t) || el.worldMenu.contains(t)) return;
+  el.worldPanel.hidden = true;
+  el.worldMenu.setAttribute('aria-expanded', 'false');
+});
+el.sea.addEventListener('input', applySeaLevel);
+
+for (const input of [el.nMoose, el.nWolves, el.nBears, el.nTres, el.nTraffic]) {
+  input.addEventListener('input', () => syncWorldCounts());
+  input.addEventListener('change', applyWorldCounts);
+}
+
+el.viewMenu.addEventListener('click', () => {
+  const open = el.viewPanel.hidden;
+  el.viewPanel.hidden = !open;
+  el.viewMenu.setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('click', (e) => {
+  if (el.viewPanel.hidden) return;
+  const t = e.target as Node;
+  if (el.viewPanel.contains(t) || el.viewMenu.contains(t)) return;
+  el.viewPanel.hidden = true;
+  el.viewMenu.setAttribute('aria-expanded', 'false');
+});
+for (const box of [el.showTelemetry, el.showView]) box.addEventListener('change', syncViewMenu);
+syncViewMenu();
 
 el.toggleJson.addEventListener('click', () => {
   el.jsonPanel.hidden = !el.jsonPanel.hidden;

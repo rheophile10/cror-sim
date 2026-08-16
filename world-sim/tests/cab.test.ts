@@ -97,7 +97,10 @@ test('a train held on a grade by dynamic brake alone gets away as it slows', () 
     alerter: { enabled: false },
   });
   train.dynamic = 1;
-  run(train, path, 180);
+  // Sixty seconds, not a hundred and eighty: with the brake pipe properly
+  // maintained the cylinders stay empty and it accelerates hard enough to reach
+  // end of steel and stop there, which would be measuring the wrong thing.
+  run(train, path, 60);
   assert.ok(train.speed > 5, `dynamic alone held it at ${train.speed.toFixed(1)} m/s`);
   // Nothing in the cylinders but the trickle that standing leakage puts there.
   assert.ok(train.cars[2]!.air.cylinderPsi < 1, 'it never made an air brake application');
@@ -129,12 +132,27 @@ test('sand buys adhesion, and the acceleration limit moves with it', () => {
 
 // ── The alerter ────────────────────────────────────────────────────────────
 
+/**
+ * The interval the alerter is working to at a given speed.
+ *
+ * It is speed-dependent, so a test that wants to run it out has to know how
+ * long it is actually waiting for rather than assuming the track-speed figure.
+ */
+function alerterInterval(speed: number): number {
+  const fast = Math.min(1, Math.abs(speed) / DEFAULT_CAB.alerterFullSpeed);
+  return (
+    DEFAULT_CAB.alerterSlowSeconds +
+    (DEFAULT_CAB.alerterSeconds - DEFAULT_CAB.alerterSlowSeconds) * fast
+  );
+}
+
 test('the alerter asks, then applies the brakes when nobody answers', () => {
   const path = straight(level());
   const train = manned({ position: 200, template: 'balanced', carCount: 4, speed: 15 });
-  run(train, path, DEFAULT_CAB.alerterSeconds - 2);
+  const interval = alerterInterval(15);
+  run(train, path, interval - 3);
   assert.equal(train.alerter.state, 'quiet', 'not yet');
-  run(train, path, 4);
+  run(train, path, 5);
   assert.equal(train.alerter.state, 'asking');
   assert.equal(train.brake, 0, 'asking is not applying');
   run(train, path, DEFAULT_CAB.alerterWarningSeconds + 1);
@@ -160,12 +178,15 @@ test('moving any control answers the alerter', () => {
 test('the reset button answers it, but does not undo a penalty', () => {
   const path = straight(level());
   const train = manned({ position: 200, template: 'balanced', carCount: 4, speed: 15 });
-  run(train, path, DEFAULT_CAB.alerterSeconds + 1);
+  // Run until it asks rather than for a fixed time: the interval depends on
+  // speed and this train is coasting down, so any fixed figure is either short
+  // of the warning or past the penalty depending on how far it has slowed.
+  for (let t = 0; t < 200 && train.alerter.state === 'quiet'; t += 0.5) run(train, path, 0.5);
   assert.equal(train.alerter.state, 'asking');
   train.acknowledge();
   assert.equal(train.alerter.state, 'quiet');
 
-  run(train, path, DEFAULT_CAB.alerterSeconds + DEFAULT_CAB.alerterWarningSeconds + 1);
+  for (let t = 0; t < 300 && train.alerter.state !== 'penalty'; t += 0.5) run(train, path, 0.5);
   assert.equal(train.alerter.state, 'penalty');
   train.acknowledge();
   assert.equal(train.alerter.state, 'penalty', 'the button is not a way out of one');
@@ -235,7 +256,7 @@ test('the PCS resets once the throttle is closed and the emergency has cleared',
 test('recovering from a penalty takes suppression, not just idle', () => {
   const path = straight(level());
   const train = manned({ position: 400, template: 'balanced', carCount: 4, speed: 15 });
-  run(train, path, DEFAULT_CAB.alerterSeconds + DEFAULT_CAB.alerterWarningSeconds + 1);
+  run(train, path, alerterInterval(15) + DEFAULT_CAB.alerterWarningSeconds + 2);
   assert.equal(train.alerter.state, 'penalty');
 
   // Releasing straight away is what an engineer reaches for and it does not work.
@@ -286,4 +307,15 @@ test('a recharge pins the flow, and it comes back down when the train is charged
   assert.ok(recharging > 100, `only ${recharging.toFixed(0)} CFM into an empty train`);
   run(train, path, 240);
   assert.ok(train.airFlowCfm < 60, `never settled: ${train.airFlowCfm.toFixed(0)} CFM`);
+});
+
+test('the alerter gives you far longer at a crawl than at track speed', () => {
+  const path = straight(level());
+  const slow = manned({ position: 200, template: 'balanced', carCount: 4, speed: 1.5 });
+  const fast = manned({ position: 200, template: 'balanced', carCount: 4, speed: 22 });
+  // Long enough to have caught the fast one and nowhere near the slow one.
+  run(slow, path, DEFAULT_CAB.alerterSeconds + DEFAULT_CAB.alerterWarningSeconds + 4);
+  run(fast, path, DEFAULT_CAB.alerterSeconds + DEFAULT_CAB.alerterWarningSeconds + 4);
+  assert.equal(fast.alerter.state, 'penalty', 'at track speed it is unforgiving');
+  assert.equal(slow.alerter.state, 'quiet', 'switching at walking pace, it leaves you alone');
 });

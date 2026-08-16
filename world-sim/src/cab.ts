@@ -71,8 +71,19 @@ export interface Pcs {
 }
 
 export interface CabOptions {
-  /** Seconds of no control movement before the alerter asks. */
+  /**
+   * Seconds of no control movement before the alerter asks, at track speed.
+   *
+   * The real device is **speed-dependent**: it gives you far longer at yard
+   * speed than at seventy miles an hour, because the distance you cover while
+   * not answering is what actually matters. Modelling it as one fixed interval
+   * made switching moves punishing for no reason.
+   */
   alerterSeconds: number;
+  /** And at a crawl, where there is much more time to notice. */
+  alerterSlowSeconds: number;
+  /** Speed at which the interval has come down to `alerterSeconds`, m/s. */
+  alerterFullSpeed: number;
   /** Seconds of flashing and sounding before it applies the brakes. */
   alerterWarningSeconds: number;
   /** Speed below which the alerter stops running, m/s. */
@@ -99,6 +110,8 @@ export interface CabOptions {
 
 export const DEFAULT_CAB: CabOptions = {
   alerterSeconds: 25,
+  alerterSlowSeconds: 60,
+  alerterFullSpeed: 20,
   alerterWarningSeconds: 7,
   alerterCutoutSpeed: 0.5,
   suppressionBrake: 0.85,
@@ -217,14 +230,17 @@ export function stepCab(train: CabTrain, dt: number, opt: CabOptions = DEFAULT_C
     }
   } else if (alerter.state !== 'penalty') {
     alerter.since += dt;
-    if (alerter.since >= opt.alerterSeconds + opt.alerterWarningSeconds) {
+    // Longer at a crawl, shorter at speed, interpolated between.
+    const fast = clamp(Math.abs(train.speed) / Math.max(1e-6, opt.alerterFullSpeed), 0, 1);
+    const interval = opt.alerterSlowSeconds + (opt.alerterSeconds - opt.alerterSlowSeconds) * fast;
+    if (alerter.since >= interval + opt.alerterWarningSeconds) {
       // Nobody answered. A full service application, and the load comes off.
       alerter.state = 'penalty';
       train.brake = 1;
       train.throttle = 0;
       train.dynamic = 0;
       openPcs(train, 'penalty');
-    } else if (alerter.since >= opt.alerterSeconds) {
+    } else if (alerter.since >= interval) {
       alerter.state = 'asking';
     }
   }

@@ -28,6 +28,45 @@
       <button class="btn" id="follow" aria-pressed="false">Follow train</button>
       <button class="btn" id="rotateL" title="Rotate left (q)">&#8630;</button>
       <button class="btn" id="rotateR" title="Rotate right (e)">&#8631;</button>
+      <div class="menu">
+        <button class="btn" id="viewMenu" aria-expanded="false">View &#9662;</button>
+        <div class="menupanel" id="viewPanel" hidden>
+          <label class="check"><input type="checkbox" id="showTelemetry" /> Telemetry</label>
+          <label class="check"><input type="checkbox" id="showView" /> View options</label>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="btn" id="worldMenu" aria-expanded="false">World &#9662;</button>
+        <div class="menupanel wide" id="worldPanel" hidden>
+          <label class="slider">
+            <span>Moose <output id="nMooseOut">0</output></span>
+            <input type="range" id="nMoose" min="0" max="80" step="1" value="0" />
+          </label>
+          <label class="slider">
+            <span>Wolves <output id="nWolvesOut">0</output></span>
+            <input type="range" id="nWolves" min="0" max="80" step="1" value="0" />
+          </label>
+          <label class="slider">
+            <span>Bears <output id="nBearsOut">0</output></span>
+            <input type="range" id="nBears" min="0" max="40" step="1" value="0" />
+          </label>
+          <label class="slider">
+            <span>Trespassers <output id="nTresOut">0</output></span>
+            <input type="range" id="nTres" min="0" max="40" step="1" value="0" />
+          </label>
+          <label class="slider">
+            <span>Traffic <output id="nTrafficOut">0</output></span>
+            <input type="range" id="nTraffic" min="0" max="150" step="1" value="0" />
+          </label>
+          <p class="note">Takes effect straight away. Everything that dies is replaced, so these are the numbers the country holds at.</p>
+          <hr class="rule" />
+          <label class="slider">
+            <span>Sea level <output id="seaOut">off</output></span>
+            <input type="range" id="sea" min="-1" max="120" step="1" value="-1" />
+          </label>
+          <p class="note" id="washoutNote">No water table. Raise it and the low ground floods; raise it to the ties and the railway is gone.</p>
+        </div>
+      </div>
       <button class="btn" id="toggleJson">Scene JSON</button>
     </header>
 
@@ -97,6 +136,7 @@
               <button class="btn" id="sound" data-on="true" title="Horn and bell audio">Sound</button>
             </div>
             <div class="row" id="hornRow"></div>
+            <p class="speedline"><span id="speedNow">0 mph</span><span class="dim"> of <span id="trackSpeed">—</span> permitted</span></p>
             <p class="warn" id="cabWarn" hidden>—</p>
           </div>
 
@@ -123,25 +163,7 @@
           <div class="row"><button class="btn" id="testQuit">Back to the railway</button></div>
         </section>
 
-        <section id="signalSection" hidden>
-          <h2>Signal ahead</h2>
-          <p class="aspect" id="aspectName">—</p>
-          <p class="indication" id="aspectIndication">No signal in sight.</p>
-          <dl class="tel">
-            <dt>Distance</dt><dd id="sigDistance">—</dd>
-            <dt>Permits</dt><dd id="sigPermits">—</dd>
-            <dt>At next signal</dt><dd id="sigNext">—</dd>
-          </dl>
-          <div class="controlled" id="controlled"></div>
-          <p class="note">Controlled signals are cleared by the RTC and show Stop until they are. Automatic signals work themselves from the block ahead.</p>
-        </section>
-
-        <section id="tapeSection" hidden>
-          <h2>Signals passed</h2>
-          <ol class="tape" id="tape"></ol>
-        </section>
-
-        <section>
+        <section id="telemetrySection" hidden>
           <h2>Telemetry</h2>
           <dl class="tel">
             <dt>Speed</dt><dd id="telSpeed">—</dd>
@@ -164,10 +186,10 @@
           <p class="alert" id="alert">Ready.</p>
         </section>
 
-        <section>
+        <section id="viewSection" hidden>
           <h2>View</h2>
           <label class="check"><input type="checkbox" id="optContours" /> Contours</label>
-          <label class="check"><input type="checkbox" id="optGrid" /> Cell grid</label>
+          <label class="check"><input type="checkbox" id="optGrid" checked /> Cell grid</label>
           <label class="check"><input type="checkbox" id="optForces" checked /> Colour cars by coupler force</label>
           <label class="check"><input type="checkbox" id="optLabels" /> Car numbers</label>
           <label class="slider">

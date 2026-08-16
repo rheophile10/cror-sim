@@ -25,6 +25,8 @@ export class Sound {
   private master: GainNode | null = null;
   private bellTimer = 0;
   private wasSounding = false;
+  private alertGain: GainNode | null = null;
+  private alertOsc: OscillatorNode | null = null;
   private enabled = true;
 
   /**
@@ -69,6 +71,23 @@ export class Sound {
       }
     }
     this.hornGain = gain;
+
+    // The alerter: a plain electronic warble, deliberately unpleasant and
+    // deliberately nothing like the horn. It is the one sound in the cab that
+    // means *you* have stopped doing something.
+    const alert = ctx.createGain();
+    alert.gain.value = 0;
+    alert.connect(this.master);
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = 1050;
+    const shaper = ctx.createGain();
+    shaper.gain.value = 0.09;
+    osc.connect(shaper);
+    shaper.connect(alert);
+    osc.start();
+    this.alertGain = alert;
+    this.alertOsc = osc;
   }
 
   setEnabled(on: boolean): void {
@@ -89,10 +108,25 @@ export class Sound {
    * bell rings in real time — but a bell that fell out of step with a horn
    * sounding four times too fast would be worse.
    */
-  update(sounding: boolean, bell: boolean, dt: number): void {
+  update(
+    sounding: boolean,
+    bell: boolean,
+    dt: number,
+    /** 'quiet' | 'asking' | 'penalty' — what the alerter is doing. */
+    alerter: string = 'quiet',
+  ): void {
     const ctx = this.ctx;
     if (!ctx || !this.hornGain) return;
     const now = ctx.currentTime;
+
+    // Asking: an intermittent beep. Penalty: continuous, because by then it is
+    // not asking any more, it is telling you what it has done.
+    if (this.alertGain && this.alertOsc) {
+      const on =
+        alerter === 'penalty' ? true : alerter === 'asking' ? Math.floor(now * 2) % 2 === 0 : false;
+      this.alertOsc.frequency.setValueAtTime(alerter === 'penalty' ? 760 : 1050, now);
+      this.alertGain.gain.setTargetAtTime(on ? 0.5 : 0, now, 0.01);
+    }
 
     if (sounding !== this.wasSounding) {
       // A short ramp rather than a step: an air horn takes a moment to come up

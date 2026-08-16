@@ -129,6 +129,15 @@ export type EventKind =
   | 'animal-struck'
   /** A road vehicle was written off, generally by a moose. */
   | 'vehicle-wrecked'
+  /**
+   * A stretch of railway has gone into the water, or come back out of it.
+   *
+   * Nothing on a train can see one coming, which is why the rules about
+   * washouts are about reporting them and protecting them rather than about
+   * observing them.
+   */
+  | 'washout'
+  | 'washout-cleared'
   /** Somebody was hurt. */
   | 'injured'
   /** A task could not be done, and why. Not a rule violation — a physical fact. */

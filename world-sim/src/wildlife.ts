@@ -106,6 +106,30 @@ export interface SpeciesTraits {
   color: string;
 }
 
+/**
+ * What each species will go after, besides people.
+ *
+ * A food chain rather than a set of hazards to a conductor: wolves take moose,
+ * bears take wolves and moose, and everything with teeth takes anybody standing
+ * on the ground. A moose hunts nothing — it only objects to being crowded — so
+ * its list is empty and it remains the one animal here that kills without
+ * meaning to.
+ */
+export const PREY: Record<Species, Species[]> = {
+  moose: [],
+  wolf: ['moose'],
+  bear: ['wolf', 'moose'],
+  dinosaur: ['moose', 'wolf', 'bear'],
+};
+
+/** Whether a species hunts people, as opposed to merely trampling them. */
+export const HUNTS_PEOPLE: Record<Species, boolean> = {
+  moose: false,
+  wolf: true,
+  bear: true,
+  dinosaur: true,
+};
+
 export const SPECIES: Record<Species, SpeciesTraits> = {
   moose: {
     length: 2.9,
@@ -217,6 +241,8 @@ export interface Animal {
   target: string | null;
   /** Car it is going after, for the one species that eats rolling stock. */
   targetCar: string | null;
+  /** Another animal it is going after. */
+  targetAnimal: string | null;
   contact: number;
   /** How it died, once it has. */
   killedBy: string | null;
@@ -296,6 +322,7 @@ export function buildWildlife(
       hold: pick() * 20,
       target: null,
       targetCar: null,
+      targetAnimal: null,
       contact: 0,
       killedBy: null,
       seed: Math.floor(pick() * 2 ** 31),
@@ -334,6 +361,14 @@ export function buildWildlife(
 /** Everything the wildlife needs to see of the world. */
 export interface WildlifeContext {
   terrain: Terrain;
+  /**
+   * Put another one of these on the map.
+   *
+   * Called whenever something is eaten, so the country does not empty itself
+   * out over an afternoon: a population that only ever goes down is a
+   * population you stop seeing.
+   */
+  spawn?: (species: Species) => void;
   /** Every animal, so a pack member can find the one it keeps station on. */
   animals: Animal[];
   people: Person[];
@@ -411,6 +446,7 @@ function scare(animal: Animal, horns: { x: number; y: number }[], opt: WildlifeO
   const run = opt.hornCarries * 0.8;
   animal.target = null;
   animal.targetCar = null;
+  animal.targetAnimal = null;
   animal.contact = 0;
   animal.state = 'fleeing';
   animal.goalX = animal.x + Math.cos(a) * run;
@@ -445,13 +481,41 @@ function think(animal: Animal, ctx: WildlifeContext, dt: number): void {
     return;
   }
 
+  // `provoked` is the whole distinction: a predator's is its full sighting
+  // range, a moose's is thirty metres of personal space.
   if (nearest && nearestD <= traits.provoked) {
     animal.target = nearest.id;
     animal.targetCar = null;
+    animal.targetAnimal = null;
     animal.state = nearestD <= reach(animal) ? 'attacking' : 'stalking';
     animal.goalX = nearest.x;
     animal.goalY = nearest.y;
     return;
+  }
+
+  // Nobody on foot within reach. Anything on the menu, then.
+  const menu = PREY[animal.species];
+  if (menu.length > 0) {
+    let prey: Animal | null = null;
+    let preyD = traits.notices;
+    for (const other of ctx.animals) {
+      if (other === animal || other.state === 'dead') continue;
+      if (!menu.includes(other.species)) continue;
+      const d = Math.hypot(other.x - animal.x, other.y - animal.y);
+      if (d < preyD) {
+        preyD = d;
+        prey = other;
+      }
+    }
+    if (prey) {
+      animal.target = null;
+      animal.targetCar = null;
+      animal.targetAnimal = prey.id;
+      animal.goalX = prey.x;
+      animal.goalY = prey.y;
+      animal.state = preyD <= reach(animal) ? 'attacking' : 'stalking';
+      return;
+    }
   }
 
   // Nobody on foot. The one species that eats equipment goes for the train
@@ -472,9 +536,10 @@ function think(animal: Animal, ctx: WildlifeContext, dt: number): void {
   }
 
   // Lost them, or nobody about.
-  if (animal.target || animal.targetCar) {
+  if (animal.target || animal.targetCar || animal.targetAnimal) {
     animal.target = null;
     animal.targetCar = null;
+    animal.targetAnimal = null;
     animal.contact = 0;
     animal.state = 'grazing';
     animal.hold = 2 + random() * 6;
@@ -606,6 +671,38 @@ function maul(animal: Animal, ctx: WildlifeContext, dt: number): void {
     });
     animal.contact = 0;
     animal.targetCar = null;
+    return;
+  }
+
+  if (animal.targetAnimal) {
+    const prey = ctx.animals.find((a) => a.id === animal.targetAnimal);
+    if (!prey || prey.state === 'dead') {
+      animal.targetAnimal = null;
+      animal.contact = 0;
+      return;
+    }
+    if (Math.hypot(prey.x - animal.x, prey.y - animal.y) > reach(animal) * 1.5) {
+      animal.contact = 0;
+      return;
+    }
+    animal.contact += dt;
+    if (animal.contact < animal.traits.killSeconds) return;
+    prey.state = 'dead';
+    prey.killedBy = `taken by a ${animal.species}`;
+    prey.target = null;
+    prey.targetAnimal = null;
+    ctx.events.emit({
+      kind: 'animal-struck',
+      at: ctx.time,
+      subject: prey.id,
+      detail: { species: prey.species, how: `taken by a ${animal.species}`, speedKmh: 0 },
+    });
+    // One out, one in. Otherwise the country empties itself.
+    ctx.spawn?.(prey.species);
+    animal.contact = 0;
+    animal.targetAnimal = null;
+    animal.state = 'grazing';
+    animal.hold = 40;
     return;
   }
 

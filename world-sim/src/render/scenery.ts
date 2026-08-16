@@ -141,16 +141,20 @@ function drawRiver(painter: Painter, river: River, st: Required<SceneryStyle>): 
     const wa = Math.hypot(a.x - d.x, a.y - d.y);
     const wb = Math.hypot(b.x - c.x, b.y - c.y);
     if (wa < 0.5 && wb < 0.5) continue;
-    const mid = cam.project((a.x + c.x) / 2, (a.y + c.y) / 2, river.level);
+    // Each reach lies at its own level, so the surface steps gently downstream
+    // instead of being one slab that leaves the valley at both ends.
+    const za = river.levels[i] ?? river.level;
+    const zb = river.levels[i + 1] ?? za;
+    const mid = cam.project((a.x + c.x) / 2, (a.y + c.y) / 2, (za + zb) / 2);
     if (mid.sx < -margin || mid.sy < -margin || mid.sx > cam.width + margin || mid.sy > cam.height + margin) {
       continue;
     }
     painter.polygon(
       [
-        { x: a.x, y: a.y, z: river.level },
-        { x: b.x, y: b.y, z: river.level },
-        { x: c.x, y: c.y, z: river.level },
-        { x: d.x, y: d.y, z: river.level },
+        { x: a.x, y: a.y, z: za },
+        { x: b.x, y: b.y, z: zb },
+        { x: c.x, y: c.y, z: zb },
+        { x: d.x, y: d.y, z: za },
       ],
       { fill: river.color, alpha: 0.82, depthBias: st.depthBias + 0.2 },
     );
