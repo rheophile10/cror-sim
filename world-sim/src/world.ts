@@ -442,11 +442,28 @@ export class World {
    * The track a train's lead car is actually standing on right now — which,
    * once there are turnouts, is not the same question as which track the scene
    * said it started on.
+   *
+   * A trap worth naming, because it has been fallen into twice: a car's `s` is
+   * measured along its **route**, not along the track this returns. The two
+   * agree only while the route happens to start where the track does, which is
+   * true in a fresh scene and false the moment a route is rebuilt — routes are
+   * cut a kilometre behind the movement. `trackFor(t).at(car.s)` therefore looks
+   * right until the train has run somewhere, and then silently points at another
+   * part of the railway. Use `headEnd`, or `train.route.at(car.s)`.
    */
   trackFor(train: Train): TrackPath | undefined {
     const lead = train.cars.find((c) => !c.derailed) ?? train.cars[0];
     if (train.route && lead) return train.route.locate(lead.s).track;
     return this.track(train.trackId);
+  }
+
+  /** Where the head end of a movement is, in the world. */
+  headEnd(train: Train): { x: number; y: number; z: number } | null {
+    const lead = train.cars.find((c) => !c.derailed) ?? train.cars[0];
+    if (!lead) return null;
+    if (lead.derailed && lead.body) return lead.body;
+    if (train.route) return train.route.at(lead.s);
+    return this.track(train.trackId)?.at(lead.s) ?? null;
   }
 
   /**

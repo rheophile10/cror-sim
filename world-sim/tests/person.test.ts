@@ -268,6 +268,76 @@ test('the work zones are the same places the actions are', () => {
   assert.deepEqual(world.workZones('cond'), []);
 });
 
+test('the head end stays findable after the route is rebuilt', () => {
+  // The camera follows the head end of the movement somebody is on. It used to
+  // find it by sampling the *track* under the lead car at that car's `s` — but
+  // `s` runs along the **route**, and a route is only ever a window: cut from a
+  // kilometre behind the movement, and re-cut whenever a switch is thrown. On a
+  // yard lead the two measures happen to agree, which is why this went unseen;
+  // on a subdivision they are kilometres apart, and the camera stopped following
+  // the train and pointed at another part of the railway.
+  //
+  // So the scene here is long on purpose. Somebody riding the lead car is the
+  // independent witness — a person's position is worked out from the car they
+  // are on, not from the code under test.
+  const world = new World({
+    terrain: { cols: 900, rows: 30, cellSize: 12, baseElevation: 4 },
+    embodied: true,
+    nodes: [{ id: 'sw', kind: 'switch', position: 'normal', operation: 'hand', label: 'W' }],
+    tracks: [
+      { id: 'main', points: [[2, 15], [200, 15], [300, 15]], to: { node: 'sw', port: 'trunk' }, spacing: 4 },
+      { id: 'main-e', points: [[300, 15], [890, 15]], from: { node: 'sw', port: 'normal' }, spacing: 4 },
+      {
+        id: 'siding',
+        points: [[300, 15], [310, 14.4], [330, 13.6], [500, 13.6]],
+        from: { node: 'sw', port: 'reverse' },
+        spacing: 4,
+      },
+    ],
+    trains: [{ id: 'M1', track: 'main', position: 2600, brake: 1, template: 'mixedFreight', carCount: 5 }],
+    people: [
+      { id: 'cond', name: 'Conductor', role: 'conductor', track: 'main', at: 2600, offset: 3 },
+      { id: 'eng', name: 'Engineer', role: 'locomotive-engineer', track: 'main', at: 2600, offset: 3 },
+    ],
+  });
+  const train = world.trains[0]!;
+  const rider = world.person('eng')!;
+
+  world.assign('eng', task('board', { target: train.cars[0]!.id }));
+  run(world, 60);
+  assert.equal(rider.posture, 'riding');
+
+  const at = () => {
+    const head = world.headEnd(train)!;
+    return Math.hypot(head.x - rider.x, head.y - rider.y);
+  };
+  // Somebody riding stands beside the car rather than on its centre line, so
+  // what is asserted is that the gap does not *change*. A jump is the symptom.
+  const offset = at();
+  assert.ok(offset < 15, 'the head end starts within a car length of the rider');
+
+  // Out of the first track and well along the second, and **stopped short of
+  // the end** — running to the buffer stop hid this once, because a wrong answer
+  // that clamps to the end of the railway is right when the train is there.
+  train.brake = 0;
+  train.throttle = 0.9;
+  run(world, 180);
+  train.throttle = 0;
+  train.brake = 1;
+  run(world, 300);
+  assert.equal(world.trackFor(train)!.id, 'main-e', 'it is out on the main');
+
+  // Getting down and lining the switch is what re-cuts every route.
+  world.sendToSwitch('cond', 'sw');
+  run(world, 1800);
+  assert.equal(world.network.nodes.get('sw')!.position, 'reverse');
+
+  assert.ok(
+    Math.abs(at() - offset) < 1,
+    `the head end is still at the lead car (was ${offset.toFixed(1)} m away, now ${at().toFixed(1)})`,
+  );
+});
+
 test('people and switch state survive a round trip through JSON', () => {
   const world = new World(yard());
   world.sendToSwitch('cond', 'sw', 'reverse');

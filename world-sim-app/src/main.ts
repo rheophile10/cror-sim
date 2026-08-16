@@ -717,12 +717,13 @@ function followTheJob(dt: number): void {
   let focus: { x: number; y: number; z: number } | null = null;
   if (onFoot && person) focus = { x: person.x, y: person.y, z: person.z };
   else {
+    // `world.headEnd`, not `trackFor(train).at(car.s)`: a car's position is
+    // measured along its route, and a route is rebuilt — starting a kilometre
+    // behind the movement — whenever a switch is thrown. Sampling the *track* at
+    // a *route* distance looked right until somebody got down, lined a switch,
+    // and came back to find the camera pointing at another part of the railway.
     const train = driving ?? world.trains.find((t) => t.id === person?.trainId) ?? world.trains[0];
-    const path = train ? world.trackFor(train) : undefined;
-    if (train && path) {
-      const p = path.at(train.cars[0]?.s ?? 0);
-      focus = { x: p.x, y: p.y, z: p.z };
-    }
+    if (train) focus = world.headEnd(train);
   }
   if (focus) renderer.lookAt(focus.x, focus.y, focus.z);
 }
@@ -742,13 +743,11 @@ function updateInstruments(): void {
   if (!train) return;
   const tel = world.telemetry(train);
   if (!tel) return;
-  const path = world.trackFor(train)!;
-  const lead = train.cars[0];
 
   el.tel.speed.textContent = `${fmt(Math.abs(mpsToMph(tel.speed)))} mph`;
   el.tel.grade.textContent = `${tel.grade >= 0 ? '+' : ''}${fmt(tel.grade * 100, 2)} %`;
   el.tel.curve.textContent = `${fmt(tel.curveDegrees, 1)}°`;
-  el.tel.elev.textContent = `${fmt(path.at(lead ? lead.s : 0).z, 0)} m`;
+  el.tel.elev.textContent = `${fmt(world.headEnd(train)?.z ?? NaN, 0)} m`;
   el.tel.draft.textContent = `${fmt(tel.maxDraft / 1000, 0)} kN`;
   el.tel.buff.textContent = `${fmt(tel.maxBuff / 1000, 0)} kN`;
   el.tel.lv.textContent = fmt(tel.maxLV, 2);
