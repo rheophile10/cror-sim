@@ -194,10 +194,16 @@ function beam(
 
 /** A lamp face is drawn at its own brightness rather than the scene's. */
 function shadeLamp(color: string, level: number): string {
-  return level >= 1 ? color : mix(color, '#6b6650', level);
+  return level >= 1 ? color : blend(color, '#6b6650', level);
 }
 
-function mix(a: string, b: string, t: number): string {
+/**
+ * Not `mix`: `color.ts` exports one of those over `Rgb` triples, and the
+ * screenshot harness flattens every module into a single scope, where the
+ * second declaration silently wins. That collision painted the terrain through
+ * this function and produced a stack trace instead of a picture.
+ */
+function blend(a: string, b: string, t: number): string {
   const pa = parseInt(a.slice(1), 16);
   const pb = parseInt(b.slice(1), 16);
   const out = [16, 8, 0].map((shift) => {

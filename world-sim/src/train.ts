@@ -640,6 +640,31 @@ export class Train {
     }
   }
 
+  /**
+   * How much of the train has its brakes off, 0 to 1.
+   *
+   * Not a pressure — a *count of cars*. What an engineer waits for after
+   * releasing is not a number on a gauge but the far end of the train letting
+   * go, and on a long train that takes a minute or more while the head end
+   * reads full pressure the whole time. This is that wait, made visible.
+   */
+  get released(): number {
+    const railed = this.cars.filter((c) => !c.derailed);
+    if (railed.length === 0) return 1;
+    const off = railed.filter((c) => c.air.cylinderPsi < 3).length;
+    return off / railed.length;
+  }
+
+  /** How much of the train's brake pipe is up to running pressure, 0 to 1. */
+  get charged(): number {
+    const railed = this.cars.filter((c) => !c.derailed);
+    if (railed.length === 0) return 1;
+    const head = railed[0]!.air.brakePipePsi;
+    if (head <= 1) return 0;
+    const up = railed.filter((c) => c.air.brakePipePsi >= head * 0.95).length;
+    return up / railed.length;
+  }
+
   /** Cars still on the rails, in consist order. */
   get railed(): Car[] {
     return this.cars.filter((c) => !c.derailed);

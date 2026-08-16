@@ -24,6 +24,7 @@ import { EventLog } from './events.ts';
 import { chargeToSteadyState, partHoses } from './airbrake.ts';
 import { buildBridge, onBridge, type Bridge, type BridgeSpec } from './bridge.ts';
 import { findWashouts, washedOutAt, type Washout } from './washout.ts';
+import { VISIBILITY, type Weather } from './weather.ts';
 import {
   buildWildlife,
   DEFAULT_WILDLIFE,
@@ -83,6 +84,7 @@ import type { TrackStyle } from './render/track.ts';
 import type { NetworkStyle } from './render/network.ts';
 import type { SceneryStyle } from './render/scenery.ts';
 import type { PersonStyle } from './render/person.ts';
+import type { ZoneStyle } from './render/zones.ts';
 import type { SignalStyle } from './render/signals.ts';
 import type { TrainStyle } from './render/train.ts';
 import type { LightStyle } from './render/lights.ts';
@@ -117,6 +119,8 @@ export interface SceneStyle {
   bridge?: BridgeStyle;
   /** Moose, wolves, bears — and the other thing. */
   wildlife?: WildlifeStyle;
+  /** The glowing circles round places there is work. See `render/zones.ts`. */
+  zones?: ZoneStyle;
 }
 
 export interface SceneSpec {
@@ -184,6 +188,8 @@ export interface SceneSpec {
    * `washout.ts`.
    */
   seaLevel?: number | null;
+  /** What it is doing outside. Decides how far anybody can see. */
+  weather?: Weather;
   /** Moose, wolf packs and bears, salted across the map. */
   wildlife?: WildlifeSpec;
   /** Overrides on what it takes to be hit by something. */
@@ -199,6 +205,47 @@ export interface Bounds {
   maxY: number;
   minZ: number;
   maxZ: number;
+}
+
+/** A place on the ground with something to be done in it. See `World.workZones`. */
+export interface WorkZone {
+  kind: 'switch' | 'derail' | 'crossing' | 'car' | 'cab' | 'coupling' | 'building';
+  /**
+   * Unique key for this circle, and the link between the ring on the ground and
+   * the box of jobs in the panel: every act offered here carries it as `zone`.
+   */
+  id: string;
+  /**
+   * What is written on the circle — "Rennie West", "Road 9", "M304 car 7". Short
+   * enough to sit on a ring and specific enough to pick out of a yard full of
+   * them; it also heads the box of jobs the circle offers.
+   */
+  label: string;
+  x: number;
+  y: number;
+  /** Ground height at the middle, so the ring can be drawn lying on the terrain. */
+  z: number;
+  /** Working distance, metres — bigger for a building, which is measured to its wall. */
+  radius: number;
+  /** Whether the person it was computed for is already standing in it. */
+  inReach: boolean;
+}
+
+/** One thing a person can do, and the circle they are standing in to do it. */
+export interface OfferedAction {
+  kind: TaskKind;
+  /** What the act is done to: a switch id, a car id, a crossing id. */
+  target: string;
+  /**
+   * What the button says. Written for a box already headed by the place — "line
+   * it reverse", not "line Rennie West reverse" — because the heading has said
+   * where you are and repeating it in every button is noise.
+   */
+  label: string;
+  /** `WorkZone.id` of the circle this came out of, or `aboard` when on a train. */
+  zone: string;
+  /** That zone's name, for the heading of the box these are gathered in. */
+  zoneLabel: string;
 }
 
 /**
@@ -240,8 +287,14 @@ export class World {
    * a game of moving everybody at once.
    */
   readonly crewSize: number;
-  /** Permissible track speed, mph. See `SceneSpec.trackSpeedMph`. */
-  readonly trackSpeedMph: number;
+  /**
+   * Permissible track speed, mph. See `SceneSpec.trackSpeedMph`.
+   *
+   * Not readonly: a temporary slow order, or a subdivision being re-rated, is
+   * an ordinary thing for a railway to do — and the aspects are read against
+   * this, so changing it changes what every signal is asking for.
+   */
+  trackSpeedMph: number;
   /**
    * Stretches of railway the water has taken.
    *
@@ -358,6 +411,7 @@ export class World {
     this.crossingOptions = { ...DEFAULT_CROSSING, ...spec.crossing };
     // After the bridges, because a trestle standing in a flooded river is doing
     // its job and must not be reported as a washout.
+    this.weather = spec.weather ?? 'clear';
     this.sea = spec.seaLevel ?? null;
     this.washouts = findWashouts(this.tracks, this.terrain, this.sea, (trackId, at) =>
       onBridge(this.bridges, trackId, at) !== null,
@@ -632,9 +686,16 @@ export class World {
    * teleports — the player picks the destination, and the world decides how long
    * it takes and whether the job can be done from there.
    */
-  send(personId: string, to: { track?: string; at: number; offset?: number }, then?: Task): boolean {
+  send(
+    personId: string,
+    to: { track?: string; at: number; offset?: number },
+    // More than one, because arriving somewhere and doing a single thing is the
+    // simple case and not the only one: climbing into a cab and then sitting
+    // down at the stand is two acts at the same place.
+    ...then: Task[]
+  ): boolean {
     const walk = task('walk', { to, label: `walk to ${to.track ?? 'here'} ${Math.round(to.at)} m` });
-    return then ? this.assign(personId, walk, then) : this.assign(personId, walk);
+    return this.assign(personId, walk, ...then);
   }
 
   /**
@@ -718,100 +779,151 @@ export class World {
   }
 
   /**
-   * What this person could do without moving.
+   * Every place on the ground where there is something to be done, and the jobs
+   * each of them offers.
    *
-   * The other half of the control scheme: having walked somewhere, you are
-   * offered what is actually within reach from there — which is the difference
-   * between a menu of everything and a menu of what a body can touch.
+   * One walk of the railway produces both, and that is the point. The circles
+   * drawn on the ground and the buttons offered in the panel are the same
+   * survey seen twice; enumerating them separately would let a ring promise
+   * work that the panel then refused, which is precisely the confusion the
+   * rings were added to end.
+   *
+   * Every zone carries a short **name** — "Rennie West", "Road 9", "M304 car
+   * 7" — which is written on the circle and heads the box of jobs it offers, so
+   * a ring on the ground and a box in the panel can be matched by eye.
    */
-  actionsAt(personId: string): { kind: TaskKind; target: string; label: string }[] {
+  private survey(personId: string, radius: number): { zones: WorkZone[]; actions: OfferedAction[] } {
     const person = this.people.find((p) => p.id === personId);
-    if (!person) return [];
-    const out: { kind: TaskKind; target: string; label: string }[] = [];
+    const zones: WorkZone[] = [];
+    const actions: OfferedAction[] = [];
+    if (!person) return { zones, actions };
 
+    // Aboard, there is nothing on the ground to walk into: what is on offer is
+    // a property of the vehicle you are on, so it is gathered under one heading
+    // rather than a place.
     if (person.posture !== 'on-ground') {
-      out.push({ kind: 'dismount', target: person.trainId ?? '', label: 'get down' });
+      const train = person.trainId ? this.trains.find((t) => t.id === person.trainId) : undefined;
+      const where =
+        person.posture === 'riding'
+          ? `on ${person.trainId ?? 'the equipment'}`
+          : `in the cab of ${train?.label ?? person.trainId ?? 'the engine'}`;
+      const at = (kind: TaskKind, target: string, label: string) =>
+        actions.push({ kind, target, label, zone: 'aboard', zoneLabel: where });
+      at('dismount', person.trainId ?? '', 'get down');
       if (person.trainId) {
-        if (person.posture === 'riding') {
-          out.push({ kind: 'ride-cab', target: person.trainId, label: 'climb into the cab' });
-        }
-        if (person.atControls) {
-          out.push({ kind: 'leave-controls', target: person.trainId, label: 'leave the controls' });
-        } else {
-          out.push({ kind: 'take-controls', target: person.trainId, label: 'take the controls' });
+        if (person.posture === 'riding') at('ride-cab', person.trainId, 'climb into the cab');
+        // The seat is only offered to somebody who is **in the cab**. Taking the
+        // controls from the side of a boxcar, or from the ballast beside the
+        // engine, is not a thing that can happen — you have to be in there.
+        if (person.posture === 'in-cab') {
+          at(
+            person.atControls ? 'leave-controls' : 'take-controls',
+            person.trainId,
+            person.atControls ? 'leave the controls' : 'take the controls',
+          );
         }
       }
-      return out;
+      return { zones, actions };
     }
 
+    const near = (x: number, y: number, within = radius) =>
+      Math.hypot(x - person.x, y - person.y) <= within;
+    /** How close you have to be to the train before its cars are worth ringing. */
+    const ALONGSIDE = 45;
+
+    /**
+     * Put a circle on the ground and say whether the person is standing in it.
+     * Everything that offers work goes through here, so nothing can be offered
+     * from a place that was never drawn.
+     */
+    const place = (
+      kind: WorkZone['kind'],
+      id: string,
+      label: string,
+      x: number,
+      y: number,
+      extra = 0,
+    ): ((k: TaskKind, target: string, text: string) => void) | null => {
+      if (!near(x, y)) return null;
+      const r = person.reach + extra;
+      const inReach = Math.hypot(x - person.x, y - person.y) <= r;
+      zones.push({ kind, id, label, x, y, z: this.terrain.heightAt(x, y), radius: r, inReach });
+      if (!inReach) return null;
+      return (k, target, text) =>
+        actions.push({ kind: k, target, label: text, zone: id, zoneLabel: label });
+    };
+
     for (const node of this.network.nodes.values()) {
-      if (!canWork(person, node.x, node.y)) continue;
+      const name = node.label ?? node.id;
       if (node.kind === 'switch' && node.operation !== 'spring') {
+        const at = place('switch', node.id, name, node.x, node.y);
+        if (!at) continue;
         const other = node.position === 'normal' ? 'reverse' : 'normal';
-        out.push({ kind: 'line-switch', target: node.id, label: `line ${node.label ?? node.id} ${other}` });
-        out.push({ kind: 'point-and-call', target: node.id, label: `point and call at ${node.label ?? node.id}` });
+        at('line-switch', node.id, `line it ${other}`);
+        at('point-and-call', node.id, 'point and call');
       } else if (node.kind === 'derail') {
-        out.push({
-          kind: 'set-derail',
-          target: node.id,
-          label: node.derailing ? `take off the derail` : `set the derail`,
-        });
+        const at = place('derail', node.id, name, node.x, node.y);
+        if (!at) continue;
+        at('set-derail', node.id, node.derailing ? 'take off the derail' : 'set the derail');
       }
     }
 
     for (const crossing of this.crossings) {
-      if (!canWork(person, crossing.x, crossing.y)) continue;
-      out.push(
-        crossing.flaggedBy === person.id
-          ? { kind: 'release-crossing', target: crossing.id, label: `stand down from ${crossing.label}` }
-          : { kind: 'protect-crossing', target: crossing.id, label: `stop traffic at ${crossing.label}` },
-      );
+      const at = place('crossing', crossing.id, crossing.label, crossing.x, crossing.y);
+      if (!at) continue;
+      if (crossing.flaggedBy === person.id) at('release-crossing', crossing.id, 'stand down');
+      else at('protect-crossing', crossing.id, 'stop the traffic');
     }
 
     for (const train of this.trains) {
+      const route = train.route;
+      if (!route) continue;
+      const name = train.label ?? train.id;
       for (const car of train.cars) {
-        const route = train.route;
-        if (!route) continue;
         const pt = car.derailed && car.body ? car.body : route.at(car.s);
-        if (!canWork(person, pt.x, pt.y)) continue;
-
-        // A locomotive is a thing you climb into, and that is a different act
-        // from riding the side of a car.
-        if (car.kind === 'locomotive') {
-          out.push({
-            kind: 'ride-cab',
-            target: train.id,
-            label: `climb into the cab of ${train.label ?? train.id}`,
-          });
-          out.push({
-            kind: 'take-controls',
-            target: train.id,
-            label: `take the controls of ${train.label ?? train.id}`,
-          });
-        }
-        out.push({
-          kind: car.handbrake ? 'release-handbrake' : 'apply-handbrake',
-          target: car.id,
-          label: `${car.handbrake ? 'release' : 'apply'} the handbrake on ${car.id}`,
-        });
-        if (car.air.cylinderPsi > 1 || car.air.reservoirPsi > 1) {
-          out.push({ kind: 'bleed', target: car.id, label: `bleed off ${car.id}` });
-        }
-        out.push({ kind: 'board', target: car.id, label: `get on ${car.id}` });
+        // A locomotive is somewhere you walk *to*, so it is ringed from as far
+        // off as anything else. A car and a coupling are jobs you do once you
+        // are already at the train, and ringing all of them at long range drew
+        // a chain of overlapping circles the length of the consist — which
+        // marks the train, a thing nobody was having trouble finding.
+        const loco = car.kind === 'locomotive';
+        if (!loco && !near(pt.x, pt.y, ALONGSIDE)) continue;
+        const at = place(
+          loco ? 'cab' : 'car',
+          `${train.id}:${car.id}`,
+          loco ? `${train.id} cab ${car.id}` : `${train.id} car ${car.id}`,
+          pt.x,
+          pt.y,
+        );
+        if (!at) continue;
+        // Climbing in is all that is on offer from the ground. The controls come
+        // after, once you are in the cab.
+        if (loco) at('ride-cab', train.id, `climb into the cab of ${name}`);
+        at(
+          car.handbrake ? 'release-handbrake' : 'apply-handbrake',
+          car.id,
+          `${car.handbrake ? 'release' : 'apply'} the handbrake`,
+        );
+        if (car.air.cylinderPsi > 1 || car.air.reservoirPsi > 1) at('bleed', car.id, 'bleed it off');
+        at('board', car.id, 'get on');
       }
 
       // Cutting is offered at the *coupling*, which is half a car length from
       // the middle of either car standing beside it.
-      const route = train.route;
-      if (!route) continue;
       for (let i = 0; i < train.cars.length - 1; i++) {
         const joint = route.at((train.cars[i]!.s + train.cars[i + 1]!.s) / 2);
-        if (!canWork(person, joint.x, joint.y)) continue;
-        out.push({
-          kind: 'uncouple',
-          target: train.cars[i]!.id,
-          label: `cut off behind ${train.cars[i]!.id} (${train.cars.length - i - 1} cars)`,
-        });
+        if (!near(joint.x, joint.y, ALONGSIDE)) continue;
+        const ahead = train.cars[i]!;
+        const behind = train.cars[i + 1]!;
+        const at = place(
+          'coupling',
+          `${train.id}:${i}|${i + 1}`,
+          `${train.id} joint ${ahead.id}\u2013${behind.id}`,
+          joint.x,
+          joint.y,
+        );
+        if (!at) continue;
+        at('uncouple', ahead.id, `cut off behind (${train.cars.length - i - 1} cars)`);
       }
     }
 
@@ -822,15 +934,59 @@ export class World {
         if (Math.abs(train.speed) > 0.3 || Math.abs(other.speed) > 0.3) continue;
         const gap = this.couplingGap(train, other);
         if (gap === null || gap.distance > 2.5) continue;
-        if (!canWork(person, gap.x, gap.y)) continue;
-        out.push({
-          kind: 'couple',
-          target: `${train.id}|${other.id}`,
-          label: `couple ${train.label ?? train.id} to ${other.label ?? other.id}`,
-        });
+        const at = place(
+          'coupling',
+          `${train.id}+${other.id}`,
+          `${train.id} to ${other.id}`,
+          gap.x,
+          gap.y,
+        );
+        if (!at) continue;
+        at('couple', `${train.id}|${other.id}`, `couple ${train.label ?? train.id} to ${other.label ?? other.id}`);
       }
     }
-    return out;
+
+    for (const b of this.scenery.buildings) {
+      if (!b.label) continue;
+      // Measured to the wall rather than the middle, so a grain elevator is not
+      // harder to reach than a shed.
+      place('building', `bldg:${b.label}`, b.label, b.x, b.y, Math.max(b.width, b.depth) / 2 + 10);
+    }
+
+    return { zones, actions };
+  }
+
+  /**
+   * Every place on the ground where there is something to be done.
+   *
+   * `actionsAt` answers "what can this person do from where they stand". This
+   * answers the question that comes *before* it — **where should they stand** —
+   * and it exists because the previous answer was "somewhere within five metres
+   * of a thing you cannot see the extent of". A working radius is a real part of
+   * the job; leaving it invisible turned walking to a switch into a guess, and
+   * turned the honest refusal at six metres into a bug report.
+   *
+   * So the radius is drawn, and it is drawn round the **thing**, not round the
+   * person: a circle you walk into.
+   *
+   * Cars are one zone each rather than one for the movement, because they are
+   * one job each — a handbrake is wound on a particular car.
+   */
+  workZones(personId: string, radius = 800): WorkZone[] {
+    return this.survey(personId, radius).zones;
+  }
+
+  /**
+   * What this person could do without moving.
+   *
+   * The other half of the control scheme: having walked somewhere, you are
+   * offered what is actually within reach from there — which is the difference
+   * between a menu of everything and a menu of what a body can touch. Each act
+   * says which circle it came out of, so the panel can group them the way the
+   * ground does.
+   */
+  actionsAt(personId: string): OfferedAction[] {
+    return this.survey(personId, 800).actions;
   }
 
   /**
@@ -1406,6 +1562,20 @@ export class World {
     }
   }
 
+  /**
+   * What it is doing outside.
+   *
+   * Changeable while the scene runs. The only thing it decides is how far
+   * anybody can see, which is enough: a signal that cannot be seen yet is one
+   * you are approaching on the strength of the last one.
+   */
+  weather: Weather = 'clear';
+
+  /** How far you can see, metres. */
+  get visibility(): number {
+    return VISIBILITY[this.weather];
+  }
+
   /** Sea level, metres, or null for a scene with no water table. */
   get seaLevel(): number | null {
     return this.sea;
@@ -1746,7 +1916,9 @@ export class World {
 
   /** The next signal governing a movement, and how far ahead it is. */
   signalAhead(train: Train, within?: number): SignalSighting | null {
-    return signalAhead(train, this.signals, within);
+    // Defaults to how far you can actually see, not to some fixed range: in fog
+    // the next signal is simply not there yet.
+    return signalAhead(train, this.signals, within ?? this.visibility);
   }
 
   /** Flags a movement is coming up on, nearest first. */
@@ -1882,6 +2054,7 @@ export class World {
       crewSize: this.crewSize,
       trackSpeedMph: this.trackSpeedMph,
       seaLevel: this.sea,
+      weather: this.weather,
       // Serialised from live state, not from the spec: a person walks, and a
       // scene saved mid-tour should reload with them where they got to.
       people: this.people.map((p) => ({

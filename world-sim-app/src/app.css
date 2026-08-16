@@ -278,6 +278,44 @@ input[type='range'] {
   border-left-color: #e8d44a;
 }
 
+/**
+ * One box per circle you are standing in, headed by that circle's name — the
+ * same name written on the ring out on the ground. The heading is the whole
+ * point: two overlapping zones offer two sets of jobs, and without it there is
+ * nothing to say which button belongs to which thing.
+ */
+.zonebox {
+  border: 1px solid var(--line);
+  /* The same green the ring turns when you are standing in it. */
+  border-left: 3px solid #8ff0a8;
+  border-radius: 5px;
+  padding: 6px 7px 2px;
+  margin-bottom: 8px;
+  background: rgba(143, 240, 168, 0.05);
+}
+
+.zonebox h4 {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #8ff0a8;
+}
+
+.zonebox .crew {
+  margin-bottom: 4px;
+}
+
+.btn.stop {
+  width: 100%;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--danger);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  text-align: left;
+}
+
 .doing {
   margin: 0 0 8px;
   font-size: 0.76rem;
@@ -715,4 +753,101 @@ textarea {
 .note[data-state='bad'] {
   color: var(--danger);
   font-weight: 600;
+}
+
+/* ── Menus must stay on the screen ────────────────────────────────────────
+   A panel anchored to the right edge of a button near the right edge of a
+   phone runs off the side. Constrain it to the viewport and let it scroll. */
+.menupanel {
+  max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+}
+
+@media (max-width: 820px) and (orientation: portrait) {
+  /* Two rows of toolbar and no more. Small controls, tight gaps, and the
+     labels that only repeat what the control says are dropped. */
+  .bar {
+    padding: 5px 6px;
+    gap: 5px;
+    row-gap: 4px;
+    max-height: 84px;
+    overflow: hidden;
+  }
+  .bar .btn {
+    padding: 5px 8px;
+    font-size: 0.7rem;
+    min-height: 32px;
+  }
+  .bar .field span {
+    display: none;
+  }
+  .bar .field select {
+    min-height: 32px;
+    font-size: 0.72rem;
+  }
+  .spacer {
+    display: none;
+  }
+  /* Anchored to the left of the button instead of the right, so the wide
+     panels open inward rather than off the edge. */
+  .menupanel {
+    right: auto;
+    left: 0;
+    max-width: calc(100vw - 16px);
+  }
+}
+
+/* ── The tutorial ─────────────────────────────────────────────────────────
+   Over the map rather than beside it: it is about the map, and it goes away. */
+.tutorial {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 14px 16px;
+  border: 1px solid var(--line, #2a3037);
+  border-radius: 8px;
+  background: rgba(20, 24, 28, 0.94);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  z-index: 15;
+}
+
+.tutorial h3 {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.tutorial p {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.tutorial p.dim {
+  color: var(--dim);
+  font-size: 0.7rem;
+}
+
+.tutorial .row {
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.tutorial .check {
+  font-size: 0.72rem;
+  color: var(--dim);
+}
+
+/* Whose feet a click on the map moves. */
+#actionsSection[data-who]:not([data-who='']) h2::after {
+  content: ' — click the map to walk ' attr(data-who);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--dim);
 }

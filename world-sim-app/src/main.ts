@@ -16,6 +16,7 @@ import {
   World,
   kgToTonnes,
   mpsToMph,
+  type OfferedAction,
   type SceneSpec,
 } from 'world-sim';
 import { Sound } from './sound';
@@ -61,11 +62,8 @@ const el = {
   play: $<HTMLButtonElement>('play'),
   rate: $<HTMLSelectElement>('rate'),
   reset: $<HTMLButtonElement>('reset'),
-  fit: $<HTMLButtonElement>('fit'),
-  follow: $<HTMLButtonElement>('follow'),
   rotateL: $<HTMLButtonElement>('rotateL'),
   rotateR: $<HTMLButtonElement>('rotateR'),
-  toggleJson: $<HTMLButtonElement>('toggleJson'),
   viewMenu: $<HTMLButtonElement>('viewMenu'),
   viewPanel: $<HTMLDivElement>('viewPanel'),
   showTelemetry: $<HTMLInputElement>('showTelemetry'),
@@ -82,9 +80,17 @@ const el = {
   nBearsOut: $<HTMLOutputElement>('nBearsOut'),
   nTresOut: $<HTMLOutputElement>('nTresOut'),
   nTrafficOut: $<HTMLOutputElement>('nTrafficOut'),
+  settingsMenu: $<HTMLButtonElement>('settingsMenu'),
+  settingsPanel: $<HTMLDivElement>('settingsPanel'),
   sea: $<HTMLInputElement>('sea'),
   seaOut: $<HTMLOutputElement>('seaOut'),
   washoutNote: $<HTMLParagraphElement>('washoutNote'),
+  trackSpeed2: $<HTMLInputElement>('trackSpeed2'),
+  tsOut: $<HTMLOutputElement>('tsOut'),
+  tutorial: $<HTMLDivElement>('tutorial'),
+  tutorialClose: $<HTMLButtonElement>('tutorialClose'),
+  tutorialOff: $<HTMLInputElement>('tutorialOff'),
+  showTutorial: $<HTMLInputElement>('showTutorial'),
   telemetrySection: $<HTMLElement>('telemetrySection'),
   viewSection: $<HTMLElement>('viewSection'),
   throttle: $<HTMLInputElement>('throttle'),
@@ -119,6 +125,7 @@ const el = {
   optLabels: $<HTMLInputElement>('optLabels'),
   stats: $<HTMLParagraphElement>('stats'),
   crewSection: $<HTMLElement>('crewSection'),
+  actionsSection: $<HTMLElement>('actionsSection'),
   crew: $<HTMLDivElement>('crew'),
   crewDoing: $<HTMLParagraphElement>('crewDoing'),
   crewActions: $<HTMLDivElement>('crewActions'),
@@ -138,14 +145,6 @@ const el = {
   testQuit: $<HTMLButtonElement>('testQuit'),
 
   lvfill: $<HTMLDivElement>('lvfill'),
-  jsonPanel: $<HTMLElement>('jsonPanel'),
-  json: $<HTMLTextAreaElement>('json'),
-  jsonErr: $<HTMLParagraphElement>('jsonErr'),
-  apply: $<HTMLButtonElement>('apply'),
-  download: $<HTMLButtonElement>('download'),
-  importBtn: $<HTMLButtonElement>('importBtn'),
-  file: $<HTMLInputElement>('file'),
-  closeJson: $<HTMLButtonElement>('closeJson'),
   tel: {
     speed: $('telSpeed'),
     grade: $('telGrade'),
@@ -267,12 +266,10 @@ const sound = new Sound();
 let detachControls: (() => void) | null = null;
 let detachWalk: (() => void) | null = null;
 let playing = true;
-let following = false;
 /** The most recent impact, kept so the readout does not blink out immediately. */
 let lastImpact: { what: string; closing: number; derailed: boolean } | null = null;
 /** Which crew member the panels act on. */
 let selected: string | null = null;
-const baseHint = document.querySelector('.hint')?.textContent ?? '';
 /** What was last offered, so the action buttons are not rebuilt every frame. */
 let offeredSignature = '';
 /** The spec the current world was built from, so Reset is exact. */
@@ -311,8 +308,6 @@ function loadScene(spec: SceneSpec, keepCamera = false): void {
   detachWalk = attachWalkOnClick();
   detachControls = attachCameraControls(canvas, renderer.camera, {
     onChange: () => {
-      following = false;
-      el.follow.setAttribute('aria-pressed', 'false');
       syncPitch();
     },
   });
@@ -509,14 +504,16 @@ function drivenTrain() {
   return world.trains.find((t) => t.id === person.trainId);
 }
 
-/** Say what a click will do, since it depends on whether somebody is selected. */
+/**
+ * Say what a click will do, at the top of the actions panel.
+ *
+ * It used to be a strip of text under the map; that has become the tutorial,
+ * which goes away. This is the one line that has to stay, because which person
+ * a click moves is a live fact rather than an instruction.
+ */
 function updateHint(): void {
-  const hint = document.querySelector('.hint');
-  if (!hint) return;
   const person = selected ? world.person(selected) : undefined;
-  hint.textContent = person
-    ? `Click the ground to send ${person.name} walking there · ${baseHint}`
-    : baseHint;
+  el.actionsSection.dataset.who = person && person.posture === 'on-ground' ? person.name : '';
 }
 
 function syncCrewPanel(): void {
@@ -536,7 +533,21 @@ function syncCrewPanel(): void {
           : person.posture === 'in-cab'
             ? `cab of ${person.trainId}`
             : `riding ${person.trainId}`;
-    btn.textContent = `${person.name} · ${where}`;
+    // An icon, because "Conductor" and "Engineer" are the same length and the
+    // same colour and you are picking between them dozens of times an hour.
+    const icon =
+      person.injury !== 'none'
+        ? '\u2620'
+        : person.atControls
+          ? '\u{1F39B}'
+          : person.posture === 'in-cab'
+            ? '\u{1F686}'
+            : person.role === 'conductor'
+              ? '\u{1F9D1}'
+              : person.role === 'locomotive-engineer'
+                ? '\u{1F468}'
+                : '\u{1F464}';
+    btn.textContent = `${icon}  ${person.name} · ${where}`;
     btn.title = `${person.role} — ${where}`;
   }
 
@@ -577,30 +588,70 @@ function syncCrewPanel(): void {
   // Rebuilt only when the offered set changes, so the buttons do not flicker
   // out from under the pointer every frame.
   const actions = world.actionsAt(person.id);
-  if (person.task || person.queue.length > 0) {
-    actions.unshift({ kind: 'wait', target: '', label: 'stop what you are doing' });
-  }
-  const signature = actions.map((a) => `${a.kind}:${a.target}`).join('|');
+  const signature = actions.map((a) => `${a.zone}/${a.kind}:${a.target}`).join('|');
   if (signature === offeredSignature) return;
   offeredSignature = signature;
-  el.crewActions.replaceChildren(
-    ...actions.map((action) => {
+
+  // One box per circle, headed by the circle's name.
+  //
+  // Standing where two zones overlap — beside a switch that is also alongside a
+  // car — used to produce a single undifferentiated list of eight buttons whose
+  // only clue about *which thing* each acted on was the wording of the label.
+  // Boxed and headed, the panel has the same shape as the ground: you are in
+  // these circles, and these are the jobs in each.
+  const boxes = new Map<string, { label: string; acts: OfferedAction[] }>();
+  for (const action of actions) {
+    let box = boxes.get(action.zone);
+    if (!box) boxes.set(action.zone, (box = { label: action.zoneLabel, acts: [] }));
+    box.acts.push(action);
+  }
+
+  const nodes: HTMLElement[] = [];
+  // Cancelling is not work done at a place, so it is not in any of the boxes.
+  if (person.task || person.queue.length > 0) {
+    const stop = document.createElement('button');
+    stop.className = 'btn stop';
+    stop.textContent = 'stop what you are doing';
+    stop.addEventListener('click', () => {
+      world.cancel(person.id);
+      offeredSignature = '';
+      syncCrewPanel();
+    });
+    nodes.push(stop);
+  }
+
+  for (const [id, box] of boxes) {
+    const wrap = document.createElement('div');
+    wrap.className = 'zonebox';
+    wrap.dataset.zone = id;
+    const head = document.createElement('h4');
+    head.textContent = box.label;
+    wrap.append(head);
+    const row = document.createElement('div');
+    row.className = 'crew';
+    for (const action of box.acts) {
       const btn = document.createElement('button');
       btn.className = 'btn';
       btn.textContent = action.label;
-      btn.title = action.label;
+      btn.title = `${action.label} — ${box.label}`;
       btn.addEventListener('click', () => {
-        if (action.kind === 'wait' && action.target === '') {
-          world.cancel(person.id);
-        } else {
-          world.assign(person.id, task(action.kind, { target: action.target, label: action.label }));
-        }
+        world.assign(person.id, task(action.kind, { target: action.target, label: action.label }));
         offeredSignature = '';
         syncCrewPanel();
       });
-      return btn;
-    }),
-  );
+      row.append(btn);
+    }
+    wrap.append(row);
+    nodes.push(wrap);
+  }
+
+  if (nodes.length === 0 && person.posture === 'on-ground') {
+    const empty = document.createElement('p');
+    empty.className = 'note';
+    empty.textContent = 'Not standing in anything. Walk into a circle.';
+    nodes.push(empty);
+  }
+  el.crewActions.replaceChildren(...nodes);
 }
 
 
@@ -628,6 +679,55 @@ function syncControlLabels(): void {
   el.indOut.textContent = `${el.independent.value}%`;
   el.dynamicOut.textContent = `${el.dynamic.value}%`;
 }
+
+/**
+ * Put the camera where the work is.
+ *
+ * There is no Fit button and no follow toggle any more, because neither is a
+ * decision worth making: what you want to see follows from what you are doing.
+ *
+ *   **On foot** — close in. A person walking is working with switches, couplings
+ *   and handbrakes, all of which are a few metres across.
+ *   **In the cab** — following the movement, and zoomed out with speed, because
+ *   the faster you are going the further ahead you need to be looking.
+ *
+ * And in both cases the view is capped by **how far you can see**. Showing a
+ * crew two kilometres of railway in fog would be showing them something they do
+ * not have.
+ */
+function followTheJob(dt: number): void {
+  const person = selected ? world.person(selected) : undefined;
+  const driving = drivenTrain();
+  const onFoot = person?.posture === 'on-ground';
+
+  // Pixels per metre. On foot, close enough to see a switch stand; driving,
+  // wide enough to see the stopping distance at this speed.
+  const speed = driving ? Math.abs(mpsToMph(driving.speed)) : 0;
+  // On foot, right in: a person is working with a switch stand, a coupling or a
+  // handbrake, and at four pixels to the metre none of those is legible.
+  let want = onFoot ? 11 : 2.6 - Math.min(1.9, speed / 45);
+  // Never wider than the weather allows: the visible half-width in metres is
+  // half the canvas divided by the zoom, and that must not exceed sighting.
+  const widest = renderer.camera.width / 2 / Math.max(60, world.visibility);
+  want = Math.max(want, widest);
+  renderer.camera.zoom += (want - renderer.camera.zoom) * clamp01(dt * 1.5);
+
+  // What to look at: whoever is selected if they are on the ground, otherwise
+  // the head end of the movement they are on.
+  let focus: { x: number; y: number; z: number } | null = null;
+  if (onFoot && person) focus = { x: person.x, y: person.y, z: person.z };
+  else {
+    const train = driving ?? world.trains.find((t) => t.id === person?.trainId) ?? world.trains[0];
+    const path = train ? world.trackFor(train) : undefined;
+    if (train && path) {
+      const p = path.at(train.cars[0]?.s ?? 0);
+      focus = { x: p.x, y: p.y, z: p.z };
+    }
+  }
+  if (focus) renderer.lookAt(focus.x, focus.y, focus.z);
+}
+
+const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
 
 function syncPitch(): void {
   el.pitch.value = String(Math.round(renderer.camera.pitch));
@@ -730,15 +830,14 @@ function frame(now: number): void {
     for (const hit of world.collisions) {
       lastImpact = { what: hit.what, closing: hit.closing, derailed: hit.derailed };
     }
-    if (following) {
-      const train = world.trains[0];
-      const path = train ? world.trackFor(train) : undefined;
-      if (train && path) {
-        const p = path.at(train.cars[0]?.s ?? 0);
-        renderer.lookAt(p.x, p.y, p.z);
-      }
-    }
+    followTheJob(dt);
   }
+  // Light up the working radius of whoever is selected and on their feet. It
+  // goes dark the moment they climb aboard, because from a car there is nothing
+  // to walk into — and it would otherwise ring every car of the train you are
+  // riding.
+  const walker = selected ? world.person(selected) : undefined;
+  renderer.workZonesFor = walker?.posture === 'on-ground' ? walker.id : null;
   renderer.render();
   updateInstruments();
   updateCabControls();
@@ -749,10 +848,8 @@ function frame(now: number): void {
     const ctx = el.testCanvas.getContext('2d');
     if (card && ctx) drawSignalCard(ctx, card, now / 1000);
   }
-  if (!el.worldPanel.hidden) {
-    applyWorldCounts();
-    syncWashoutNote();
-  }
+  if (!el.worldPanel.hidden) applyWorldCounts();
+  if (!el.settingsPanel.hidden) syncWashoutNote();
   // What a person can reach changes with every step they take.
   if (world.people.length > 0) syncCrewPanel();
   requestAnimationFrame(frame);
@@ -775,8 +872,6 @@ function selectScene(key: string): void {
   if (!entry) return;
   el.scene.value = entry.key;
   loadScene(JSON.parse(entry.json) as SceneSpec);
-  el.json.value = entry.json.trim();
-  el.jsonErr.textContent = '';
 }
 
 el.scene.addEventListener('change', () => {
@@ -798,16 +893,7 @@ el.play.addEventListener('click', () => {
 
 el.reset.addEventListener('click', () => loadScene(currentSpec, true));
 
-el.fit.addEventListener('click', () => {
-  following = false;
-  el.follow.setAttribute('aria-pressed', 'false');
-  renderer.frameAll();
-});
 
-el.follow.addEventListener('click', () => {
-  following = !following;
-  el.follow.setAttribute('aria-pressed', String(following));
-});
 
 el.rotateL.addEventListener('click', () => renderer.camera.orbit(-15));
 el.rotateR.addEventListener('click', () => renderer.camera.orbit(15));
@@ -1065,7 +1151,80 @@ document.addEventListener('click', (e) => {
   el.worldPanel.hidden = true;
   el.worldMenu.setAttribute('aria-expanded', 'false');
 });
+// ── The tutorial ──────────────────────────────────────────────────────────
+//
+// Shown once, closed with a button, and silenced for good if asked. Kept in
+// `localStorage` rather than in the scene, because whether *you* have read it
+// is a fact about you and not about the railway.
+const TUTORIAL_KEY = 'cror-sim.tutorial.off';
+
+function tutorialSilenced(): boolean {
+  try {
+    return localStorage.getItem(TUTORIAL_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function showTutorial(show: boolean): void {
+  el.tutorial.hidden = !show;
+  el.showTutorial.checked = show;
+}
+
+el.tutorialClose.addEventListener('click', () => {
+  if (el.tutorialOff.checked) {
+    try {
+      localStorage.setItem(TUTORIAL_KEY, '1');
+    } catch {
+      // A browser that refuses storage simply gets the tutorial again next time,
+      // which is a smaller problem than failing to close it.
+    }
+  }
+  showTutorial(false);
+});
+
+el.showTutorial.addEventListener('change', () => {
+  showTutorial(el.showTutorial.checked);
+  try {
+    localStorage.setItem(TUTORIAL_KEY, el.showTutorial.checked ? '0' : '1');
+  } catch {
+    /* see above */
+  }
+});
+
+showTutorial(!tutorialSilenced());
+
+// ── Settings ──────────────────────────────────────────────────────────────
+//
+// Properties of the railway and the world it sits in, as opposed to the World
+// menu's question of how busy that world is.
+el.settingsMenu.addEventListener('click', () => {
+  const open = el.settingsPanel.hidden;
+  if (open) syncSettings();
+  el.settingsPanel.hidden = !open;
+  el.settingsMenu.setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('click', (e) => {
+  if (el.settingsPanel.hidden) return;
+  const t = e.target as Node;
+  if (el.settingsPanel.contains(t) || el.settingsMenu.contains(t)) return;
+  el.settingsPanel.hidden = true;
+  el.settingsMenu.setAttribute('aria-expanded', 'false');
+});
+
+function syncSettings(): void {
+  el.sea.value = String(world.seaLevel ?? -1);
+  el.seaOut.textContent = world.seaLevel === null ? 'off' : `${world.seaLevel} m`;
+  el.trackSpeed2.value = String(world.trackSpeedMph);
+  el.tsOut.textContent = `${world.trackSpeedMph} mph`;
+  syncWashoutNote();
+}
+
 el.sea.addEventListener('input', applySeaLevel);
+el.trackSpeed2.addEventListener('input', () => {
+  world.trackSpeedMph = Number(el.trackSpeed2.value);
+  el.tsOut.textContent = `${world.trackSpeedMph} mph`;
+});
 
 for (const input of [el.nMoose, el.nWolves, el.nBears, el.nTres, el.nTraffic]) {
   input.addEventListener('input', () => syncWorldCounts());
@@ -1087,53 +1246,9 @@ document.addEventListener('click', (e) => {
 for (const box of [el.showTelemetry, el.showView]) box.addEventListener('change', syncViewMenu);
 syncViewMenu();
 
-el.toggleJson.addEventListener('click', () => {
-  el.jsonPanel.hidden = !el.jsonPanel.hidden;
-});
-el.closeJson.addEventListener('click', () => {
-  el.jsonPanel.hidden = true;
-});
 
-el.apply.addEventListener('click', () => {
-  try {
-    const spec = JSON.parse(el.json.value) as SceneSpec;
-    loadScene(spec, true);
-    el.jsonErr.textContent = '';
-  } catch (err) {
-    el.jsonErr.textContent = err instanceof Error ? err.message : String(err);
-  }
-});
 
-el.download.addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(world.toJSON({ state: true }), null, 2)], {
-    type: 'application/json',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${world.name.toLowerCase().replace(/\s+/g, '-')}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-});
 
-el.importBtn.addEventListener('click', () => el.file.click());
-
-el.file.addEventListener('change', () => {
-  const file = el.file.files?.[0];
-  if (!file) return;
-  void file.text().then((text) => {
-    try {
-      loadScene(JSON.parse(text) as SceneSpec);
-      el.json.value = text.trim();
-      el.jsonErr.textContent = '';
-      el.jsonPanel.hidden = false;
-    } catch (err) {
-      el.jsonErr.textContent = err instanceof Error ? err.message : String(err);
-      el.jsonPanel.hidden = false;
-    }
-  });
-  el.file.value = '';
-});
 
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
@@ -1141,7 +1256,6 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     el.play.click();
   }
-  if (e.key === 'f') el.fit.click();
 });
 
 selectScene(window.location.hash.replace('#', '') || scenes[0]?.key || '');

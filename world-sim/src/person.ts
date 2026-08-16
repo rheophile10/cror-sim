@@ -198,7 +198,17 @@ export interface Task {
  * that being in the wrong place has consequences, and a generous radius quietly
  * gives that back.
  */
-export const WORKING_DISTANCE = 5;
+/**
+ * How close you have to be to work on something, metres.
+ *
+ * Twelve rather than five. Five is roughly true — you can touch a switch stand
+ * from five metres — but it makes an invisible target a few pixels across on a
+ * plan of a railway, and walking somebody onto it is fiddly in a way the job is
+ * not. Twelve is a zone you can aim at, and the rings drawn round the things
+ * you can work make it something you walk *into* rather than something you
+ * discover you have missed.
+ */
+export const WORKING_DISTANCE = 12;
 
 /**
  * Default task durations in simulated seconds.
@@ -932,6 +942,11 @@ function complete(person: Person, ctx: PersonContext, t: Task): void {
     case 'take-controls': {
       const train = ctx.trains.find((x) => x.id === t.target);
       if (!train) return void refuse(person, ctx, 'no such movement');
+      // You have to be in the cab. Climbing in is its own act and its own eight
+      // seconds; this is sitting down at the stand once you are.
+      if (person.posture !== 'in-cab') {
+        return void refuse(person, ctx, 'not in the cab — climb in first');
+      }
       // One pair of hands on the controls. Somebody else taking them is
       // somebody else giving them up, and the log says so.
       for (const other of ctx.people) {

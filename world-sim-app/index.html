@@ -3,11 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>world-sim — isometric terrain</title>
+    <title>Whiteshell Subdivision</title>
+    <!-- The tab icon, as an inline SVG carrying the emoji: no file to fetch and
+         nothing to go missing when the page is served from a subdirectory. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9A%82%3C/text%3E%3C/svg%3E"
+    />
   </head>
   <body>
     <header class="bar">
-      <h1>world&#8209;sim</h1>
       <label class="field">
         <span>Scene</span>
         <select id="scene"></select>
@@ -24,8 +29,6 @@
       </label>
       <button class="btn" id="reset">Reset</button>
       <span class="spacer"></span>
-      <button class="btn" id="fit" title="Fit the whole terrain on screen">Fit</button>
-      <button class="btn" id="follow" aria-pressed="false">Follow train</button>
       <button class="btn" id="rotateL" title="Rotate left (q)">&#8630;</button>
       <button class="btn" id="rotateR" title="Rotate right (e)">&#8631;</button>
       <div class="menu">
@@ -59,29 +62,61 @@
             <input type="range" id="nTraffic" min="0" max="150" step="1" value="0" />
           </label>
           <p class="note">Takes effect straight away. Everything that dies is replaced, so these are the numbers the country holds at.</p>
-          <hr class="rule" />
+        </div>
+      </div>
+      <div class="menu">
+        <button class="btn" id="settingsMenu" aria-expanded="false">Settings &#9662;</button>
+        <div class="menupanel wide" id="settingsPanel" hidden>
           <label class="slider">
             <span>Sea level <output id="seaOut">off</output></span>
             <input type="range" id="sea" min="-1" max="120" step="1" value="-1" />
           </label>
           <p class="note" id="washoutNote">No water table. Raise it and the low ground floods; raise it to the ties and the railway is gone.</p>
+          <hr class="rule" />
+          <label class="check"><input type="checkbox" id="showTutorial" /> Show the tutorial</label>
+          <hr class="rule" />
+          <label class="slider">
+            <span>Track speed <output id="tsOut">45 mph</output></span>
+            <input type="range" id="trackSpeed2" min="10" max="80" step="5" value="45" />
+          </label>
+          <p class="note">What the timetable permits. Signals are read against it — &ldquo;Clear&rdquo; permits it, and &ldquo;Clear to Stop&rdquo; requires ten mph less.</p>
         </div>
       </div>
-      <button class="btn" id="toggleJson">Scene JSON</button>
     </header>
 
     <main>
       <div class="stage">
         <canvas id="view"></canvas>
-        <p class="hint">
-          Drag to pan &middot; right&#8209;drag or shift&#8209;drag to orbit and tilt &middot; wheel to zoom
-        </p>
+        <div class="tutorial" id="tutorial" hidden>
+          <h3>Getting about</h3>
+          <p>
+            Pick somebody in <strong>Crew</strong>, then <strong>click the ground</strong> to send
+            them walking there. Everything they could work &mdash; switches, crossings, the
+            engine, each car, the station &mdash; is ringed with a <strong>glowing
+            circle</strong>. Walk into one and the ring turns green; the jobs it offers appear
+            under <strong>Actions</strong>.
+          </p>
+          <p>
+            To drive: walk to the engine, <em>climb into the cab</em>, then
+            <em>take the controls</em>. Release the automatic brake and wait &mdash; on a long
+            train the far end takes a while to let go.
+          </p>
+          <p class="dim">Drag to pan &middot; right&#8209;drag or shift&#8209;drag to orbit and tilt &middot; wheel to zoom.</p>
+          <div class="row">
+            <button class="btn" id="tutorialClose" data-primary>Got it</button>
+            <label class="check"><input type="checkbox" id="tutorialOff" /> Don&rsquo;t show this again</label>
+          </div>
+        </div>
       </div>
 
       <aside class="panel">
         <section id="crewSection">
           <h2>Crew</h2>
           <div class="crew" id="crew"></div>
+        </section>
+
+        <section id="actionsSection">
+          <h2>Controls &amp; actions</h2>
           <p class="doing" id="crewDoing">—</p>
 
           <div id="cabControls" hidden>
@@ -201,19 +236,6 @@
       </aside>
     </main>
 
-    <section class="json" id="jsonPanel" hidden>
-      <div class="jsonbar">
-        <strong>Scene JSON</strong>
-        <span class="spacer"></span>
-        <button class="btn" id="apply" data-primary>Apply</button>
-        <button class="btn" id="download">Export&hellip;</button>
-        <button class="btn" id="importBtn">Import&hellip;</button>
-        <input type="file" id="file" accept=".json,application/json" hidden />
-        <button class="btn" id="closeJson">Close</button>
-      </div>
-      <textarea id="json" spellcheck="false"></textarea>
-      <p class="jsonerr" id="jsonErr"></p>
-    </section>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

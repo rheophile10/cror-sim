@@ -115,6 +115,8 @@ export type {
 export { DEFAULT_SCENERY_STYLE, drawScenery } from './render/scenery.ts';
 export { DEFAULT_PERSON_STYLE, drawPeople } from './render/person.ts';
 export type { PersonStyle } from './render/person.ts';
+export { DEFAULT_ZONE_STYLE, drawWorkZones } from './render/zones.ts';
+export type { ZoneStyle } from './render/zones.ts';
 export { DEFAULT_SIGNAL_STYLE, drawFlags, drawSignals } from './render/signals.ts';
 export type { SignalStyle } from './render/signals.ts';
 export type { SceneryStyle } from './render/scenery.ts';
@@ -246,6 +248,9 @@ export type { WildlifeStyle } from './render/wildlife.ts';
 export { DEFAULT_WASHOUT, findWashouts, washedOutAt } from './washout.ts';
 export type { Washout, WashoutOptions } from './washout.ts';
 
+export { VISIBILITY, WEATHER_LABEL } from './weather.ts';
+export type { Weather } from './weather.ts';
+
 export { EventLog } from './events.ts';
 export type { EventKind, WorldEvent } from './events.ts';
 
@@ -267,7 +272,7 @@ export { fell, INJURY_LABEL } from './person.ts';
 export type { Injury, Person, PersonRole, PersonSpec, Posture, Task, TaskKind } from './person.ts';
 
 export { World } from './world.ts';
-export type { Bounds, SceneSpec, SceneStyle } from './world.ts';
+export type { Bounds, OfferedAction, SceneSpec, SceneStyle, WorkZone } from './world.ts';
 
 export { IsoCamera } from './render/camera.ts';
 export type { CameraOptions, Projected } from './render/camera.ts';

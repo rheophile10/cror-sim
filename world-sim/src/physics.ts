@@ -396,6 +396,10 @@ export interface Telemetry {
   airFlowCfm: number;
   /** Dynamic braking force the whole train is making right now, newtons. */
   dynamicForce: number;
+  /** How much of the train has its brakes off, 0 to 1. See `Train.released`. */
+  released: number;
+  /** How much of the pipe is up to pressure, 0 to 1. */
+  charged: number;
   derailed: boolean;
   /** How many cars are off the rails. */
   derailedCount: number;
@@ -432,6 +436,8 @@ export function telemetry(train: Train, path: Guideway): Telemetry {
     mass: train.mass,
     airFlowCfm: train.airFlowCfm,
     dynamicForce,
+    released: train.released,
+    charged: train.charged,
     derailed: train.derailed,
     derailedCount: train.derailedCount,
     overturned,

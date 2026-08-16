@@ -884,3 +884,58 @@ The first version found no washouts at all once the sea was high, because the
 scan closed a run only when it came *out* of the water — and a track under water
 all the way to its far end never does. That is the commonest case of all, not an
 edge case.
+
+---
+
+# The view follows the job
+
+There is no Fit button and no follow toggle, because neither is a decision worth
+making — what you want to see follows from what you are doing.
+
+**On foot**, close in: a person walking is working with switches, couplings and
+handbrakes, all of which are a few metres across. **In the cab**, following the
+movement and widening with speed, because the faster you are going the further
+ahead you need to be looking. And in both cases the view is capped by **how far
+you can see** — `weather.ts` gives a sighting distance, and showing a crew two
+kilometres of railway in fog would be showing them something they do not have.
+
+Weather is not simulated: nothing precipitates and nothing accumulates. The one
+consequence modelled is sighting distance, because that is the one the job turns
+on — `signalAhead` now defaults to it, so in fog the next signal is simply not
+there yet, and you are running on the strength of the last one.
+
+# Two boxes, and the seat comes after the cab
+
+Crew and actions are separate panels: picking *who* and picking *what* are
+different questions asked at different rates. The crew buttons carry an icon,
+because "Conductor" and "Engineer" are the same length and the same colour and
+you are choosing between them dozens of times an hour.
+
+**"Take the controls" is only offered to somebody already in the cab.** Taking
+the seat from the ballast beside the engine, or from the side of a boxcar, is
+not a thing that can happen. Climbing in is its own act with its own eight
+seconds, and the task refuses as well as the menu hiding it.
+
+# What "never in a ditch" cost, and what it actually means
+
+The first attempt was literal: a **fills-only envelope**, the lowest profile
+staying at or above the ground everywhere within the ruling grade. It is the
+wrong answer for this country, and the numbers say why — crossing a valley
+without a cut *requires* a fill, so the line ended up riding embankments for
+ninety-two per cent of its length, up to fifty-four metres high, and still
+carrying thirty-metre cuts where the envelope could not keep up.
+
+What is wanted is not "no cuts ever" but "never in a ditch". So the profile is
+smoothed and grade-limited as before, then **clamped to no more than a two-metre
+cut** and lifted a little proud of the ground elsewhere — settled over two
+passes, because clamping upward steepens the profile and re-limiting the grade
+pushes it back down.
+
+The result: a quarter of the line within 20 cm of the ground, half within 1.2 m,
+three quarters within 1.6 m.
+
+**And the bug underneath all of it:** the corridor was being shaped to a two per
+cent profile while the track itself was declared `maxGrade: 1.2`. The rail
+refused to follow ground it had been given, floating over every rise and
+undercutting every dip — which is the embankment-and-ditch problem the whole
+exercise was meant to remove. The two numbers are now the same number.

@@ -159,7 +159,11 @@ test('a handbrake takes half a minute and then actually holds the car', () => {
 });
 
 test('what a person can do depends entirely on where they are standing', () => {
-  const world = new World(yard());
+  // Standing well clear of everything: the working radius is twelve metres, and
+  // the conductor starts beside the train.
+  const world = new World(yard({
+    people: [{ id: 'cond', name: 'Conductor', role: 'conductor', track: 'main', at: 300, offset: 3 }],
+  }));
   assert.deepEqual(world.actionsAt('cond').map((a) => a.kind).sort(), [], 'nothing within reach');
 
   world.sendToSwitch('cond', 'sw');
@@ -225,11 +229,43 @@ test('the working distance covers a switch stand and not much more', () => {
   world.step(0.02);
   assert.ok(world.somebodyAt(node.x, node.y), 'at the stand is at the switch');
 
-  // Two car lengths away is not.
-  person.at -= 40;
+  // Three car lengths away is not.
+  person.at -= 60;
   world.step(0.02);
   assert.equal(world.somebodyAt(node.x, node.y), null);
-  assert.ok(WORKING_DISTANCE < 10, 'and the radius is tight enough to mean something');
+  // Wide enough to be a place you can walk into and see yourself entering,
+  // narrow enough that "at the switch" still means at the switch rather than
+  // anywhere on the lead.
+  assert.ok(WORKING_DISTANCE >= 8 && WORKING_DISTANCE <= 20, 'the radius still means something');
+});
+
+test('the work zones are the same places the actions are', () => {
+  const world = new World(yard());
+  world.sendToSwitch('cond', 'sw');
+  run(world, 600);
+
+  const zones = world.workZones('cond');
+  const stand = zones.find((z) => z.kind === 'switch' && z.id === 'sw');
+  assert.ok(stand, 'the switch is ringed');
+  assert.equal(stand!.radius, WORKING_DISTANCE);
+  // Standing at it, the ring says so and the action is offered. The two must
+  // never disagree: the circle is a promise about what the panel will show.
+  assert.equal(stand!.inReach, true);
+  const offered = world.actionsAt('cond').filter((a) => a.target === 'sw');
+  assert.ok(offered.length > 0);
+  // Every act names the circle it came out of, and names it the same way the
+  // circle does: that string is all the panel has to head the box with.
+  assert.ok(offered.every((a) => a.zone === stand!.id && a.zoneLabel === stand!.label));
+  assert.ok(zones.every((z) => z.label.length > 0), 'every circle is named');
+  // Nothing is ever offered from a circle that was not drawn.
+  const drawn = new Set(zones.filter((z) => z.inReach).map((z) => z.id));
+  assert.ok(world.actionsAt('cond').every((a) => drawn.has(a.zone)));
+
+  // Nothing is ringed for somebody who is not on their feet — from a car there
+  // is nothing to walk into.
+  const person = world.person('cond')!;
+  person.posture = 'riding';
+  assert.deepEqual(world.workZones('cond'), []);
 });
 
 test('people and switch state survive a round trip through JSON', () => {
@@ -382,7 +418,11 @@ test('a conductor at an engine can climb into the cab, and only then is anybody 
 
   const offered = world.actionsAt('cond');
   assert.match(offered.find((a) => a.kind === 'ride-cab')!.label, /climb into the cab/);
-  assert.ok(offered.find((a) => a.kind === 'take-controls'), 'and the seat as well');
+  assert.equal(
+    offered.find((a) => a.kind === 'take-controls'),
+    undefined,
+    'the seat is not on offer from the ballast — you have to be in the cab',
+  );
 
   // Climbing in is not taking the controls. A conductor rides in the cab for
   // most of a trip and is not driving, and the two acts are separate.
@@ -391,6 +431,10 @@ test('a conductor at an engine can climb into the cab, and only then is anybody 
   assert.equal(world.person('cond')!.posture, 'in-cab');
   assert.equal(world.person('cond')!.atControls, false);
   assert.equal(world.cabOccupant(train.id), null, 'in the cab is not at the controls');
+  assert.ok(
+    world.actionsAt('cond').some((a) => a.kind === 'take-controls'),
+    'and now the seat is offered',
+  );
 
   world.assign('cond', task('take-controls', { target: train.id }));
   run(world, 20);
@@ -855,10 +899,16 @@ test('only somebody at the controls can set and centre', () => {
   assert.match(world.person('cond')!.lastRefusal ?? '', /not at the controls/);
   assert.equal(train.reverser, 'forward');
 
-  // In the cab it works, and it is recorded.
+  // In the cab it works, and it is recorded. Climbing in comes first: the
+  // controls cannot be taken from the ground.
   const engine = train.cars[0]!;
   const loc = train.route!.locate(engine.s);
-  world.send('cond', { track: loc.track.id, at: loc.at, offset: 3 }, task('take-controls', { target: train.id }));
+  world.send(
+    'cond',
+    { track: loc.track.id, at: loc.at, offset: 3 },
+    task('ride-cab', { target: train.id }),
+    task('take-controls', { target: train.id }),
+  );
   run(world, 700);
   world.assign('cond', task('set-and-centre', { target: train.id }));
   run(world, 20);

@@ -20,6 +20,7 @@ import { drawLights } from './lights.ts';
 import { drawCrossings } from './crossings.ts';
 import { drawBridges } from './bridge.ts';
 import { drawWildlife } from './wildlife.ts';
+import { drawWorkZones } from './zones.ts';
 
 export interface RendererOptions {
   camera?: CameraOptions;
@@ -33,6 +34,15 @@ export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   /** Faces drawn on the last frame, for a stats readout. */
   lastFaceCount = 0;
+  /**
+   * Whose working radius to light up, if anybody's.
+   *
+   * Set to the selected person and every place they could work is ringed on the
+   * ground; clear it and the plan of the railway is unmarked again. It lives on
+   * the renderer rather than in the scene because it is a property of who you
+   * are looking through, not of the world.
+   */
+  workZonesFor: string | null = null;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -136,6 +146,16 @@ export class Renderer {
       depthBias: bias,
       ...style.crossings,
     });
+    // The work zones sit on the ground but must be visible over ballast and
+    // road deck, so they are biased just past the track rather than under it.
+    if (this.workZonesFor) {
+      drawWorkZones(
+        this.painter,
+        this.world.workZones(this.workZonesFor),
+        this.world.terrain,
+        { depthBias: bias + 0.3, ...style.zones },
+      );
+    }
     drawObstructions(this.painter, this.world.obstructions, this.world.network.tracks, {
       depthBias: bias,
       ...style.network,

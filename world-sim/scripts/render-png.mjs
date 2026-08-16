@@ -113,9 +113,15 @@ function cameraLines() {
     .join('\n');
 }
 
-/** `--zoom=` and `--focus=x,y` override the automatic fit, for close-ups. */
+/**
+ * `--zoom=` and `--focus=x,y` override the automatic fit, for close-ups;
+ * `--zones=<person>` lights up that person's working radii, which is the only
+ * way to see them from a terminal.
+ */
 function framing() {
   const out = [];
+  const zones = argv.find((a) => a.startsWith('--zones='));
+  if (zones) out.push(`  r.workZonesFor = ${JSON.stringify(zones.split('=')[1])};`);
   const zoom = argv.find((a) => a.startsWith('--zoom='));
   const focus = argv.find((a) => a.startsWith('--focus='));
   if (zoom) out.push(`  r.camera.zoom = ${Number(zoom.split('=')[1])}; r.camera.refresh();`);
