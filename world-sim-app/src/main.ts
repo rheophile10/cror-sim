@@ -16,6 +16,7 @@ import {
   World,
   kgToTonnes,
   mpsToMph,
+  DEFAULT_AIR,
   type OfferedAction,
   type SceneSpec,
 } from 'world-sim';
@@ -94,6 +95,11 @@ const el = {
   telemetrySection: $<HTMLElement>('telemetrySection'),
   viewSection: $<HTMLElement>('viewSection'),
   throttle: $<HTMLInputElement>('throttle'),
+  toIdle: $<HTMLButtonElement>('toIdle'),
+  airGauge: $<HTMLDivElement>('airGauge'),
+  airState: $<HTMLElement>('airState'),
+  airRead: $<HTMLElement>('airRead'),
+  airFill: $<HTMLDivElement>('airFill'),
   throttleOut: $<HTMLOutputElement>('throttleOut'),
   brake: $<HTMLInputElement>('brake'),
   brakeOut: $<HTMLOutputElement>('brakeOut'),
@@ -354,6 +360,11 @@ function attachWalkOnClick(): () => void {
     if (e.button !== 0) return;
     const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
     if (moved > 4 || performance.now() - downAt > 600) return;
+    // A menu is open: this tap is dismissing it. In portrait the panels sit in
+    // the middle of the screen, so the ground around them is exactly where you
+    // tap to close one — and sending somebody walking to the far side of the
+    // yard as a side effect of putting a menu away is not what anybody meant.
+    if (!el.viewPanel.hidden || !el.worldPanel.hidden || !el.settingsPanel.hidden) return;
     const person = selected ? world.person(selected) : undefined;
     if (!person) return;
     if (person.posture !== 'on-ground') {
@@ -481,19 +492,86 @@ function updateCabControls(): void {
   // The two things that take control away from the engineer, said plainly.
   // Both look identical from the seat — a handle that moves and does nothing —
   // so the reason has to be on the screen or the simulation is just broken.
+  // What is actually outstanding, rather than a general description of the
+  // situation. "Throttle to idle until the pipe is back up" is true and useless:
+  // it does not say that the handle is already at idle, or that what is holding
+  // the reset now is an automatic brake still applied, and a crew that has done
+  // its half of the job and sees the same sentence concludes nothing is
+  // happening. Each of these names the one thing left to do.
+  const notIdle = train.throttle !== 0 || train.dynamic !== 0;
   const warn = train.pcs.open
     ? train.pcs.reason === 'penalty'
-      ? 'PENALTY — no power. Automatic brake to full and hold it until the PCS resets.'
-      : 'PCS OPEN — no power. Throttle to idle until the pipe is back up.'
+      ? notIdle
+        ? 'PENALTY — no power. Throttle to idle, then automatic brake to full and hold it.'
+        : train.brake < 0.85
+          ? 'PENALTY — no power. Automatic brake to full and hold it there.'
+          : `PENALTY — holding. The PCS resets in ${Math.max(0, 8 - train.pcs.settled).toFixed(0)} s.`
+      : notIdle
+        ? 'PCS OPEN — no power until the throttle and dynamic are at idle.'
+        : train.emergency
+          ? 'PCS OPEN — the pipe is still dumped. Release the automatic brake and let it charge.'
+          : `PCS OPEN — resetting in ${Math.max(0, 8 - train.pcs.settled).toFixed(0)} s.`
     : train.alerter.state === 'asking'
       ? 'ALERTER — answer it or it will apply the brakes.'
       : train.reverser === 'neutral'
         ? 'Reverser centred — the throttle will do nothing.'
         : '';
+  updateAir(train);
+
   el.cabWarn.hidden = warn === '';
   el.cabWarn.textContent = warn;
   el.cabWarn.dataset.state = train.pcs.open || train.alerter.state === 'penalty' ? 'bad' : 'warn';
   syncControlLabels();
+}
+
+/**
+ * The air, in front of the engineer, always.
+ *
+ * It used to be visible only in the optional telemetry panel, which is off by
+ * default — so "no power until the pipe is back up" was an instruction with
+ * nothing to watch, and a crew that cut off some cars and sat waiting had no
+ * way to tell recharging from a simulation that had stopped working. Charging a
+ * long train takes minutes; a minute with nothing moving on the screen is
+ * indistinguishable from nothing happening at all.
+ *
+ * The **rear** car is the number on the bar, because the rear car is the one
+ * that takes the time. The head end comes up almost at once and tells you
+ * nothing; the difference between the two ends *is* the recharge.
+ */
+function updateAir(train: NonNullable<ReturnType<typeof drivenTrain>>): void {
+  const head = train.cars[0];
+  const rear = train.cars[train.cars.length - 1];
+  if (!head || !rear) return;
+  // Taken from the scene's own physics rather than assumed, so a scene that
+  // runs a different regulating pressure gets a bar that means something.
+  const air = world.physics.air ?? DEFAULT_AIR;
+  const target = air.regulatingPsi;
+  const rearPsi = rear.air.brakePipePsi;
+  const full = rearPsi >= target - 2;
+
+  const state = train.emergency
+    ? 'emergency'
+    : rear.air.cylinderPsi > 3
+      ? 'applied'
+      : full
+        ? 'charged'
+        : 'charging';
+  el.airGauge.dataset.state = state;
+  el.airFill.style.width = `${Math.max(0, Math.min(100, (rearPsi / target) * 100)).toFixed(1)}%`;
+  el.airRead.textContent = `head ${head.air.brakePipePsi.toFixed(0)} · rear ${rearPsi.toFixed(0)} of ${target.toFixed(0)} psi`;
+
+  // Said in words as well as drawn, because "charging" and "charged" are three
+  // pixels apart on a bar that is nearly full either way, and the difference
+  // between them is whether you may pull.
+  el.airState.textContent = train.emergency
+    ? 'EMERGENCY — pipe dumped'
+    : train.brake > 0.02
+      ? `brake applied — pipe held at ${(target - train.brake * air.fullServicePsi).toFixed(0)} psi`
+      : state === 'applied'
+        ? 'releasing — brakes still set back there'
+        : full
+          ? 'pipe charged'
+          : 'brake pipe charging';
 }
 
 /** The movement the driving controls act on right now, if any. */
@@ -901,6 +979,27 @@ el.pitch.addEventListener('input', () => {
   renderer.camera.pitch = Number(el.pitch.value);
   renderer.camera.refresh();
   syncPitch();
+});
+
+/**
+ * Straight back to idle.
+ *
+ * The throttle handle runs from full dynamic through idle to full power, so
+ * idle is a *point* in the middle of a slider and finding it by dragging is
+ * fiddly at the best of times. It is also the one position that matters under
+ * pressure: with the PCS open there is no power at all until the handle is at
+ * idle, and hunting for the middle of a slider is not what a hand does when the
+ * train has just gone into emergency.
+ */
+el.toIdle.addEventListener('click', () => {
+  const train = drivenTrain();
+  if (train) {
+    train.throttle = 0;
+    train.dynamic = 0;
+  }
+  el.throttle.value = '0';
+  el.dynamic.value = '0';
+  syncControlLabels();
 });
 
 el.throttle.addEventListener('input', () => {

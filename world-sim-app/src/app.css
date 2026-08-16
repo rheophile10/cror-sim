@@ -744,6 +744,72 @@ textarea {
   min-width: 250px;
 }
 
+/* A small button living inside a slider's own label. */
+.chip {
+  margin-left: 6px;
+  padding: 1px 7px;
+  font: inherit;
+  font-size: 0.66rem;
+  font-family: var(--mono);
+  color: var(--dim);
+  background: #20262d;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+/* ── The air ──────────────────────────────────────────────────────────────
+   Head and rear pipe pressure and a bar for the rear one. Charging a long
+   train takes minutes, and a minute of nothing happening is indistinguishable
+   from a simulation that has stopped working unless there is something moving
+   to look at. */
+.airgauge {
+  margin: 2px 0 6px;
+}
+
+.airline {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  margin-bottom: 3px;
+}
+
+.airbar {
+  height: 6px;
+  border-radius: 3px;
+  background: #20262d;
+  overflow: hidden;
+}
+
+.airbar > div {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
+.airgauge[data-state='charging'] .airbar > div {
+  background: #d8a13a;
+}
+
+.airgauge[data-state='charged'] .airbar > div {
+  background: #3fa564;
+}
+
+.airgauge[data-state='applied'] .airbar > div {
+  background: #c76b3a;
+}
+
+.airgauge[data-state='emergency'] .airbar > div {
+  background: var(--danger);
+}
+
 .rule {
   border: none;
   border-top: 1px solid var(--line, #2a3037);
@@ -789,12 +855,25 @@ textarea {
   .spacer {
     display: none;
   }
-  /* Anchored to the left of the button instead of the right, so the wide
-     panels open inward rather than off the edge. */
+  /* ── Menus come to the middle of the screen ───────────────────────────
+     Not a style choice. The toolbar is clipped to two rows with
+     `overflow: hidden`, and a panel dropping out of a clipped box is a panel
+     nobody ever sees: View, World and Settings all opened correctly and were
+     cut off at the bar. Fixed positioning takes them out of that box
+     altogether, and the middle of the screen is the one place on a phone that
+     is neither under a thumb nor off an edge. */
   .menupanel {
-    right: auto;
-    left: 0;
-    max-width: calc(100vw - 16px);
+    position: fixed;
+    inset: auto;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(360px, calc(100vw - 28px));
+    max-width: none;
+    max-height: min(72vh, 560px);
+    z-index: 60;
+    padding: 14px 16px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65), 0 0 0 100vmax rgba(4, 6, 8, 0.55);
   }
 }
 

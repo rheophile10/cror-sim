@@ -121,7 +121,9 @@
 
           <div id="cabControls" hidden>
             <label class="slider">
-              <span>Throttle <output id="throttleOut">0%</output></span>
+              <span>Throttle <output id="throttleOut">0%</output>
+                <button class="chip" id="toIdle" type="button" title="Knock the throttle straight back to idle">Idle</button>
+              </span>
               <input type="range" id="throttle" min="-100" max="100" step="1" value="0" />
             </label>
             <label class="slider">
@@ -172,6 +174,18 @@
             </div>
             <div class="row" id="hornRow"></div>
             <p class="speedline"><span id="speedNow">0 mph</span><span class="dim"> of <span id="trackSpeed">—</span> permitted</span></p>
+            <!-- The air, always in front of you. It used to live only in the
+                 optional telemetry panel, which is off by default — so "wait
+                 until the pipe is back up" was an instruction with nothing to
+                 watch. The bar is the rear car, because the rear car is the
+                 one that takes the time. -->
+            <div class="airgauge" id="airGauge">
+              <div class="airline">
+                <span id="airState">charging</span>
+                <span class="dim" id="airRead">— psi</span>
+              </div>
+              <div class="airbar"><div id="airFill"></div></div>
+            </div>
             <p class="warn" id="cabWarn" hidden>—</p>
           </div>
 
