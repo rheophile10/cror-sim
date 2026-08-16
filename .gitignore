@@ -1,0 +1,12 @@
+node_modules/
+
+# Build output. The library's `dist/` is what the app imports, and the app's is
+# the published page; both are produced by `npm run build` and by CI, so neither
+# belongs in the history.
+dist/
+dist-test/
+*.tsbuildinfo
+
+# Stills from scripts/render-png.mjs. Root only, on purpose: a screenshot you
+# deliberately add under a docs or assets folder should still be committable.
+/*.png

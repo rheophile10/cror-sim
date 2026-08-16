@@ -1,0 +1,58 @@
+# Build the viewer and publish it to GitHub Pages.
+#
+# The app builds to one self-contained `dist/index.html` with `base: './'`, so
+# there is nothing to configure for the `/cror-sim/` subpath and no assets to
+# route — the whole site is that one file.
+#
+# Two installs, because the app depends on the library by relative path
+# (`"world-sim": "file:../world-sim"`) and `npm run lib` shells out to the
+# library's own toolchain to build it.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        run: |
+          npm ci --prefix world-sim
+          npm ci --prefix world-sim-app
+      # Run the library's tests before publishing. A green page built on a red
+      # library is worse than no page.
+      - name: Test the library
+        run: npm test --prefix world-sim
+      - name: Build the viewer
+        run: npm run build --prefix world-sim-app
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: world-sim-app/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

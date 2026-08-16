@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8">
+<body style="margin:0"><iframe id="f" src="/#whiteshell-sub" style="width:1500px;height:1000px;border:0"></iframe>
+<script>
+document.getElementById('f').addEventListener('load',()=>{const f=document.getElementById('f');
+setTimeout(()=>{const d=f.contentDocument;const c=d.querySelector('canvas');const w=f.contentWindow;
+const r=c.getBoundingClientRect();
+for(let i=0;i<26;i++) c.dispatchEvent(new w.WheelEvent('wheel',{deltaY:120,clientX:r.width/2,clientY:r.height/2,bubbles:true,cancelable:true}));
+},2000);});
+</script>

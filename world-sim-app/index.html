@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>world-sim — isometric terrain</title>
+  </head>
+  <body>
+    <header class="bar">
+      <h1>world&#8209;sim</h1>
+      <label class="field">
+        <span>Scene</span>
+        <select id="scene"></select>
+      </label>
+      <button class="btn" id="play" data-primary>Pause</button>
+      <label class="field">
+        <span>Rate</span>
+        <select id="rate">
+          <option value="0.25">0.25&times;</option>
+          <option value="1" selected>1&times;</option>
+          <option value="4">4&times;</option>
+          <option value="10">10&times;</option>
+        </select>
+      </label>
+      <button class="btn" id="reset">Reset</button>
+      <span class="spacer"></span>
+      <button class="btn" id="fit" title="Fit the whole terrain on screen">Fit</button>
+      <button class="btn" id="follow" aria-pressed="false">Follow train</button>
+      <button class="btn" id="rotateL" title="Rotate left (q)">&#8630;</button>
+      <button class="btn" id="rotateR" title="Rotate right (e)">&#8631;</button>
+      <button class="btn" id="toggleJson">Scene JSON</button>
+    </header>
+
+    <main>
+      <div class="stage">
+        <canvas id="view"></canvas>
+        <p class="hint">
+          Drag to pan &middot; right&#8209;drag or shift&#8209;drag to orbit and tilt &middot; wheel to zoom
+        </p>
+      </div>
+
+      <aside class="panel">
+        <section id="crewSection">
+          <h2>Crew</h2>
+          <div class="crew" id="crew"></div>
+          <p class="doing" id="crewDoing">—</p>
+
+          <div id="cabControls" hidden>
+            <label class="slider">
+              <span>Throttle <output id="throttleOut">0%</output></span>
+              <input type="range" id="throttle" min="-100" max="100" step="1" value="0" />
+            </label>
+            <label class="slider">
+              <span>Automatic brake <output id="brakeOut">0%</output></span>
+              <input type="range" id="brake" min="0" max="100" step="1" value="0" />
+            </label>
+            <label class="slider">
+              <span>Independent brake <output id="indOut">0%</output></span>
+              <input type="range" id="independent" min="0" max="100" step="1" value="0" />
+            </label>
+            <label class="slider">
+              <span>Dynamic brake <output id="dynamicOut">0%</output></span>
+              <input type="range" id="dynamic" min="0" max="100" step="1" value="0" />
+            </label>
+            <label class="field reverser">
+              <span>Reverser</span>
+              <select id="reverser">
+                <option value="forward">Forward</option>
+                <option value="neutral">Centre</option>
+                <option value="reverse">Reverse</option>
+              </select>
+            </label>
+            <div class="row">
+              <button class="btn" id="bail" title="Release the engine's brakes while the train's stay applied">Bail off</button>
+              <button class="btn" id="setCentre" title="Full independent, reverser centred">Set and centre</button>
+            </div>
+            <div class="row">
+              <button class="btn" id="sand" title="Sanders: more grip for both power and dynamic braking">Sand</button>
+              <button class="btn" id="ack" title="Answer the alerter">Reset alerter</button>
+            </div>
+            <div class="row">
+              <button class="btn" id="emergency" data-danger>Emergency</button>
+            </div>
+            <div class="row">
+              <label class="field">
+                <span>Headlight</span>
+                <select id="headlight">
+                  <option value="bright">Bright</option>
+                  <option value="dim">Dim</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+            </div>
+            <div class="row">
+              <button class="btn" id="ditch" title="Ditch lights — they flash with the horn">Ditch</button>
+              <button class="btn" id="bell" title="Bell">Bell</button>
+              <button class="btn" id="sound" data-on="true" title="Horn and bell audio">Sound</button>
+            </div>
+            <div class="row" id="hornRow"></div>
+            <p class="warn" id="cabWarn" hidden>—</p>
+          </div>
+
+          <div class="crew" id="crewActions"></div>
+          <div class="crew" id="studyActions"></div>
+          <p class="note" id="crewNote">Click the ground to walk. Work only happens where somebody is standing, and only a crew of two can be worked at once.</p>
+        </section>
+
+        <section id="testSection" hidden>
+          <h2 id="testTitle">Signals test</h2>
+          <canvas id="testCanvas" width="260" height="300"></canvas>
+          <p class="prompt" id="testPrompt">Name this signal and give its indication.</p>
+          <div id="testAnswer" hidden>
+            <p class="answerName" id="testName">—</p>
+            <p class="answerRule" id="testRule">—</p>
+            <p class="answerText" id="testIndication">—</p>
+          </div>
+          <div class="row">
+            <button class="btn" id="testReveal">Show</button>
+            <button class="btn" id="testRight" hidden>Had it</button>
+            <button class="btn" id="testWrong" hidden>Missed it</button>
+          </div>
+          <p class="note" id="testScore">—</p>
+          <div class="row"><button class="btn" id="testQuit">Back to the railway</button></div>
+        </section>
+
+        <section id="signalSection" hidden>
+          <h2>Signal ahead</h2>
+          <p class="aspect" id="aspectName">—</p>
+          <p class="indication" id="aspectIndication">No signal in sight.</p>
+          <dl class="tel">
+            <dt>Distance</dt><dd id="sigDistance">—</dd>
+            <dt>Permits</dt><dd id="sigPermits">—</dd>
+            <dt>At next signal</dt><dd id="sigNext">—</dd>
+          </dl>
+          <div class="controlled" id="controlled"></div>
+          <p class="note">Controlled signals are cleared by the RTC and show Stop until they are. Automatic signals work themselves from the block ahead.</p>
+        </section>
+
+        <section id="tapeSection" hidden>
+          <h2>Signals passed</h2>
+          <ol class="tape" id="tape"></ol>
+        </section>
+
+        <section>
+          <h2>Telemetry</h2>
+          <dl class="tel">
+            <dt>Speed</dt><dd id="telSpeed">—</dd>
+            <dt>Grade</dt><dd id="telGrade">—</dd>
+            <dt>Curve</dt><dd id="telCurve">—</dd>
+            <dt>Elevation</dt><dd id="telElev">—</dd>
+            <dt>Draft (max)</dt><dd id="telDraft">—</dd>
+            <dt>Buff (max)</dt><dd id="telBuff">—</dd>
+            <dt>L/V (max)</dt><dd id="telLV">—</dd>
+            <dt>Tonnage</dt><dd id="telMass">—</dd>
+            <dt>Brake pipe</dt><dd id="telPipe">—</dd>
+            <dt>Cylinder (head)</dt><dd id="telCyl">—</dd>
+            <dt>Cylinder (rear)</dt><dd id="telCylRear">—</dd>
+            <dt>Air flow</dt><dd id="telFlow">—</dd>
+            <dt>Dynamic</dt><dd id="telDynamic">—</dd>
+            <dt>On the ground</dt><dd id="telWreck">—</dd>
+            <dt>Last impact</dt><dd id="telHit">—</dd>
+          </dl>
+          <div class="lvbar"><div id="lvfill"></div></div>
+          <p class="alert" id="alert">Ready.</p>
+        </section>
+
+        <section>
+          <h2>View</h2>
+          <label class="check"><input type="checkbox" id="optContours" /> Contours</label>
+          <label class="check"><input type="checkbox" id="optGrid" /> Cell grid</label>
+          <label class="check"><input type="checkbox" id="optForces" checked /> Colour cars by coupler force</label>
+          <label class="check"><input type="checkbox" id="optLabels" /> Car numbers</label>
+          <label class="slider">
+            <span>Camera pitch <output id="pitchOut">30&deg;</output></span>
+            <input type="range" id="pitch" min="5" max="89" step="1" value="30" />
+          </label>
+          <p class="stat" id="stats">—</p>
+        </section>
+      </aside>
+    </main>
+
+    <section class="json" id="jsonPanel" hidden>
+      <div class="jsonbar">
+        <strong>Scene JSON</strong>
+        <span class="spacer"></span>
+        <button class="btn" id="apply" data-primary>Apply</button>
+        <button class="btn" id="download">Export&hellip;</button>
+        <button class="btn" id="importBtn">Import&hellip;</button>
+        <input type="file" id="file" accept=".json,application/json" hidden />
+        <button class="btn" id="closeJson">Close</button>
+      </div>
+      <textarea id="json" spellcheck="false"></textarea>
+      <p class="jsonerr" id="jsonErr"></p>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
