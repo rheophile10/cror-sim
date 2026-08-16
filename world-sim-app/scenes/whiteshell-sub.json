@@ -10610,8 +10610,8 @@
     {
       "id": "G881",
       "label": "G881 westward grain \u2014 RUNS SIGNALS",
-      "track": "main-5",
-      "position": 2100,
+      "track": "main-2",
+      "position": 500,
       "direction": -1,
       "cars": [
         {
