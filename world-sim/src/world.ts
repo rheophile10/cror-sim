@@ -21,6 +21,7 @@ import {
   resolveCollisions,
 } from './collision.ts';
 import { EventLog } from './events.ts';
+import { DEFAULT_ROAD_RAIL, stepRoadRail, type RoadRailOptions } from './roadrail.ts';
 import { chargeToSteadyState, partHoses } from './airbrake.ts';
 import { buildBridge, onBridge, type Bridge, type BridgeSpec } from './bridge.ts';
 import { findWashouts, washedOutAt, type Washout } from './washout.ts';
@@ -179,6 +180,8 @@ export interface SceneSpec {
   collision?: Partial<CollisionOptions>;
   /** Overrides on warning times and gate travel. */
   crossing?: Partial<CrossingOptions>;
+  /** Overrides on how road traffic behaves towards rail equipment in its way. */
+  roadRail?: Partial<RoadRailOptions>;
   /** Overrides on how an automatic movement brakes for a signal. */
   dispatch?: Partial<DispatchOptions>;
   /**
@@ -306,6 +309,8 @@ export class World {
   readonly physics: PhysicsOptions;
   readonly collision: CollisionOptions;
   readonly crossingOptions: CrossingOptions;
+  /** How road traffic behaves towards rail equipment in its way. */
+  readonly roadRailOptions: RoadRailOptions;
   readonly dispatchOptions: DispatchOptions;
   readonly wildlifeOptions: WildlifeOptions;
   /** Impacts that happened during the most recent `step`. */
@@ -409,6 +414,7 @@ export class World {
     };
     this.collision = { ...DEFAULT_COLLISION, ...spec.collision };
     this.crossingOptions = { ...DEFAULT_CROSSING, ...spec.crossing };
+    this.roadRailOptions = { ...DEFAULT_ROAD_RAIL, ...spec.roadRail };
     // After the bridges, because a trestle standing in a flooded river is doing
     // its job and must not be reported as a washout.
     this.weather = spec.weather ?? 'clear';
@@ -1300,6 +1306,25 @@ export class World {
     // movements have been stepped, so a train that has just run into one is on
     // the ground in the same frame rather than a frame late.
     if (this.washouts.length > 0) this.checkWashouts();
+    // Road traffic against rail equipment, **before** the traffic is stepped, so
+    // a vehicle brakes for what is in front of it now rather than for where the
+    // train was last frame. The crossings above are the protection; this is what
+    // happens where there is none, where it has failed, or where a vehicle is
+    // already past the stop line.
+    for (const hit of stepRoadRail(this.scenery.vehicles, this.trains, this.roadRailOptions)) {
+      this.events.emit({
+        kind: 'vehicle-wrecked',
+        at: this.time,
+        subject: `${hit.trainId}:${hit.carId}`,
+        detail: {
+          by: hit.trainId,
+          car: hit.carId,
+          closing: Math.round(hit.closing * 10) / 10,
+          x: Math.round(hit.x),
+          y: Math.round(hit.y),
+        },
+      });
+    }
     stepScenery(this.scenery, dt, this.crossings);
     // Traffic that has run off the end of its road has left the district. It is
     // taken off the map and another vehicle is put on somewhere else, which is

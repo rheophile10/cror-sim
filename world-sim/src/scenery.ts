@@ -295,6 +295,16 @@ export interface Vehicle {
    * deleting the vehicle, because the wreck is the interesting thing.
    */
   wrecked: boolean;
+  /**
+   * How much room is left before rail equipment in the way, metres, or `null`
+   * for a clear road. Written each step by `stepRoadRail`.
+   *
+   * A crossing tells traffic to stop because a train is *coming*. This is the
+   * cruder fact that there is one **there** — which is what stops a vehicle at a
+   * passive crossing, at a failed one, and at the place where a road happens to
+   * meet the track and nobody surveyed a crossing at all.
+   */
+  blockedAhead?: number | null;
 }
 
 export interface Scenery {
@@ -713,12 +723,17 @@ function holdingPoint(vehicle: Vehicle, crossings: readonly Crossing[]): number 
   const road = vehicle.road;
   if (!road || road.length <= 0) return null;
   const dir = Math.sign(vehicle.cruise) || 1;
+  // Equipment standing in the way outranks any crossing: it is not a warning
+  // that something is coming, it is the thing itself.
+  let best: number | null =
+    vehicle.blockedAhead === null || vehicle.blockedAhead === undefined
+      ? null
+      : vehicle.blockedAhead;
   // `along` grows without bound as a vehicle laps the road, while `roadAt` is a
   // position within one lap. Comparing them directly works exactly once and
   // then never again — the crossing appears to be permanently behind you — so
   // the gap is measured within the lap and then put back into `along`'s frame.
   const lap = ((vehicle.along % road.length) + road.length) % road.length;
-  let best: number | null = null;
   for (const crossing of crossings) {
     if (crossing.roadId !== road.id || !trafficStops(crossing)) continue;
     const stop = ((crossing.roadAt - dir * STOP_LINE) % road.length + road.length) % road.length;

@@ -9028,7 +9028,7 @@
       },
       "to": {
         "node": "sw-kettle",
-        "port": "trunk"
+        "port": "normal"
       },
       "spacing": 8,
       "maxGrade": 2.1999999999999997,
@@ -9105,7 +9105,7 @@
       ],
       "from": {
         "node": "sw-kettle",
-        "port": "normal"
+        "port": "trunk"
       },
       "to": {
         "node": "sw-brereton-w",
@@ -9417,7 +9417,7 @@
       },
       "to": {
         "node": "sw-bird",
-        "port": "trunk"
+        "port": "normal"
       },
       "spacing": 8,
       "maxGrade": 2.1999999999999997,
@@ -9502,7 +9502,7 @@
       ],
       "from": {
         "node": "sw-bird",
-        "port": "normal"
+        "port": "trunk"
       },
       "to": {
         "node": "sw-whitemouth-w",

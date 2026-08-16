@@ -127,7 +127,7 @@ export type EventKind =
    * evidence left: the animal is simply lying there afterwards.
    */
   | 'animal-struck'
-  /** A road vehicle was written off, generally by a moose. */
+  /** A road vehicle was written off — by a moose, or by a train at a crossing. */
   | 'vehicle-wrecked'
   /**
    * A stretch of railway has gone into the water, or come back out of it.

@@ -30,6 +30,21 @@ export interface NetworkStyle {
   /** Draw switch labels. */
   labels?: boolean;
   /**
+   * Draw the movable point blades, so which way a switch is lined can be read
+   * off the track itself rather than only off the stand.
+   */
+  points?: boolean;
+  /** Length of the point blades, metres. */
+  pointLength?: number;
+  /**
+   * How far the open blade stands off its stock rail, metres.
+   *
+   * Real switch points open by about 115 mm, which at any zoom you would use to
+   * look at a subdivision is nothing at all. This is deliberately several times
+   * that: the gap is the whole message.
+   */
+  pointGap?: number;
+  /**
    * Paint the stretch of each diverging route that is inside the clearance
    * point. On by default: it is the one part of a turnout that decides whether
    * a movement left standing is safe, and it is invisible on the ground.
@@ -48,6 +63,9 @@ export const DEFAULT_NETWORK_STYLE: Required<NetworkStyle> = {
   standHeight: 2.6,
   standOffset: 3.4,
   labels: false,
+  points: true,
+  pointLength: 9,
+  pointGap: 0.6,
   foul: true,
   foulColor: '#e2483d',
   foulHalfWidth: 2.6,
@@ -115,6 +133,98 @@ function drawFoul(painter: Painter, network: Network, st: Required<NetworkStyle>
   }
 }
 
+/**
+ * The switch points: the two movable blades, and the gap in one of them.
+ *
+ * ── What is being drawn, and why it is the thing to draw ──
+ *
+ * A turnout is invisible in plan. The stand beside it says which way it is
+ * lined, but the stand is a report — the *points* are the fact, and on the
+ * ground they are what a crew looks at before shoving through a switch. Two
+ * tapered rails lie between the stock rails and move together: the one lying
+ * tight against its stock rail forms the running edge that leads wheels onto
+ * the route that is lined, and the other is pulled away, leaving the gap that
+ * lets the flanges past on that side.
+ *
+ * So: the blade on the lined route is closed and bright; the blade on the route
+ * you are not taking stands open, and the wedge of daylight at its toe is the
+ * thing you can see from a distance.
+ *
+ * The gap is drawn several times life size. A real switch opens about 115 mm,
+ * which at any zoom that shows a train is less than a pixel — and a fact you
+ * cannot see is not being modelled, it is being asserted.
+ */
+function drawPoints(painter: Painter, network: Network, st: Required<NetworkStyle>): void {
+  const cam = painter.camera;
+  for (const node of network.switches) {
+    const mid = cam.project(node.x, node.y, node.z);
+    if (mid.sx < -200 || mid.sx > cam.width + 200 || mid.sy < -200 || mid.sy > cam.height + 200) {
+      continue;
+    }
+    // The two routes that leave the frog, already worked out for the clearance
+    // point. Using those rather than the port names keeps a trailing turnout
+    // drawn the right way round.
+    const legIds = [...new Set(node.foul.map((f) => f.trackId))];
+    if (legIds.length !== 2) continue;
+    const lined = node.ports.get(node.position)?.track;
+
+    const legs = legIds.map((id) => {
+      const track = network.tracks.get(id)!;
+      const conn = [...node.ports.values()].find((c) => c.track === id)!;
+      const along = (d: number) =>
+        track.at(conn.end === 'from' ? Math.min(d, track.length) : Math.max(0, track.length - d));
+      return { id, along };
+    });
+    if (legs.some((l) => !l.along)) continue;
+
+    for (const leg of legs) {
+      const mate = legs.find((l) => l !== leg)!;
+      const closed = leg.id === lined;
+      // Which side of this leg the other one lies on. The blade runs along the
+      // stock rail on that side, because that is the rail the two routes share
+      // at the toe.
+      const toe = leg.along(0);
+      const out = leg.along(st.pointLength);
+      const away = mate.along(st.pointLength);
+      const cross = (out.x - toe.x) * (away.y - toe.y) - (out.y - toe.y) * (away.x - toe.x);
+      const sign = cross >= 0 ? 1 : -1;
+      const half = network.tracks.get(leg.id)!.gauge / 2;
+
+      const blade: Vec3[] = [];
+      const steps = 6;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const pt = leg.along(st.pointLength * t);
+        // Closed: hard against the stock rail for its whole length. Open: pulled
+        // in off the rail at the toe, closing to nothing at the heel, which is
+        // the wedge a switch actually makes.
+        const off = half * sign - (closed ? 0 : sign * st.pointGap * (1 - t));
+        const at = side(pt, off);
+        blade.push({ ...at, z: at.z + 0.1 });
+      }
+      // Different colours, not just different positions. The gap is the fact,
+      // but at the zoom you drive from it is a couple of pixels wide, and a
+      // dark blade on dark ballast leaves nothing to see it against.
+      painter.line(blade, {
+        stroke: closed ? '#f2f7fa' : '#d0762f',
+        width: closed ? 3 : 2.2,
+        depthBias: st.depthBias + 5,
+        round: true,
+      });
+    }
+
+    // The rod that ties the two blades together, and the reason they move as
+    // one. Drawn at the toe, across the track.
+    const a = legs[0]!.along(1.5);
+    const b = legs[1]!.along(1.5);
+    painter.line([side(a, 0), side(b, 0)], {
+      stroke: '#8a939b',
+      width: 2,
+      depthBias: st.depthBias + 4.8,
+    });
+  }
+}
+
 /** A point `off` metres to one side of a point on the track. */
 function side(pt: { x: number; y: number; z: number; heading: number }, off: number): Vec3 {
   return {
@@ -147,6 +257,7 @@ export function drawNetwork(painter: Painter, network: Network, style: NetworkSt
   // The foul zones first: they lie on the ground, and everything else at a
   // turnout stands on top of them.
   if (st.foul) drawFoul(painter, network, st);
+  if (st.points) drawPoints(painter, network, st);
 
   // Derails first: they sit on the rail, and a switch stand near one should be
   // painted over it rather than behind it.

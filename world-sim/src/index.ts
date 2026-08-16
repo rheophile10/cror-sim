@@ -273,6 +273,8 @@ export type { Injury, Person, PersonRole, PersonSpec, Posture, Task, TaskKind } 
 
 export { World } from './world.ts';
 export type { Bounds, OfferedAction, SceneSpec, SceneStyle, WorkZone } from './world.ts';
+export { DEFAULT_ROAD_RAIL, stepRoadRail } from './roadrail.ts';
+export type { RoadRailHit, RoadRailOptions } from './roadrail.ts';
 
 export { IsoCamera } from './render/camera.ts';
 export type { CameraOptions, Projected } from './render/camera.ts';
