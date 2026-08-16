@@ -29,6 +29,15 @@ export interface NetworkStyle {
   standOffset?: number;
   /** Draw switch labels. */
   labels?: boolean;
+  /**
+   * Paint the stretch of each diverging route that is inside the clearance
+   * point. On by default: it is the one part of a turnout that decides whether
+   * a movement left standing is safe, and it is invisible on the ground.
+   */
+  foul?: boolean;
+  foulColor?: string;
+  /** Half-width of the painted strip, metres. */
+  foulHalfWidth?: number;
   depthBias?: number;
 }
 
@@ -39,8 +48,81 @@ export const DEFAULT_NETWORK_STYLE: Required<NetworkStyle> = {
   standHeight: 2.6,
   standOffset: 3.4,
   labels: false,
+  foul: true,
+  foulColor: '#e2483d',
+  foulHalfWidth: 2.6,
   depthBias: 0,
 };
+
+/**
+ * The stretch of each route inside the clearance point, painted red.
+ *
+ * A turnout is invisible in plan and so is the thing that matters most about
+ * one: that a car standing anywhere in the red is foul of the other route, and
+ * a car standing past it is not. There is nothing on the ground to see. Real
+ * railways mark it with a post or a painted tie, which is exactly the admission
+ * that it cannot be judged by eye — so it is drawn here, as a strip along the
+ * rails ending in a bar across them.
+ *
+ * Drawn in short pieces rather than as one long polygon, for the same reason
+ * the track is: one flat quad over rolling ground either sinks into a rise or
+ * floats over a dip.
+ */
+function drawFoul(painter: Painter, network: Network, st: Required<NetworkStyle>): void {
+  const cam = painter.camera;
+  for (const node of network.nodes.values()) {
+    if (node.foul.length === 0) continue;
+    // One cull for the whole switch: its zones are all within a few hundred
+    // metres of it, and a scene can hold a hundred switches.
+    const mid = cam.project(node.x, node.y, node.z);
+    if (mid.sx < -600 || mid.sx > cam.width + 600 || mid.sy < -600 || mid.sy > cam.height + 600) {
+      continue;
+    }
+
+    for (const zone of node.foul) {
+      const track = network.tracks.get(zone.trackId);
+      if (!track) continue;
+      const span = zone.to - zone.from;
+      if (span <= 0) continue;
+      const steps = Math.max(3, Math.ceil(span / 4));
+      for (let i = 0; i < steps; i++) {
+        const a = track.at(zone.from + (span * i) / steps);
+        const b = track.at(zone.from + (span * (i + 1)) / steps);
+        // Fading towards the clearance point, so which end is the switch is
+        // not something you have to work out.
+        const t = (i + 0.5) / steps;
+        const near = zone.end === 'from' ? 1 - t : t;
+        painter.polygon(
+          [side(a, -st.foulHalfWidth), side(a, st.foulHalfWidth), side(b, st.foulHalfWidth), side(b, -st.foulHalfWidth)],
+          {
+            fill: st.foulColor,
+            alpha: 0.12 + 0.2 * near,
+            depthBias: st.depthBias + 1.2,
+          },
+        );
+      }
+
+      // The clearance point itself: a bar across the track, which is the mark a
+      // railway paints and the only part of this that is a *place*.
+      const markAt = zone.end === 'from' ? zone.to : zone.from;
+      const mark = track.at(markAt);
+      painter.line([side(mark, -st.foulHalfWidth), side(mark, st.foulHalfWidth)], {
+        stroke: st.foulColor,
+        width: 2.5,
+        depthBias: st.depthBias + 1.4,
+      });
+    }
+  }
+}
+
+/** A point `off` metres to one side of a point on the track. */
+function side(pt: { x: number; y: number; z: number; heading: number }, off: number): Vec3 {
+  return {
+    x: pt.x + Math.sin(pt.heading) * off,
+    y: pt.y - Math.cos(pt.heading) * off,
+    z: pt.z + 0.06,
+  };
+}
 
 /**
  * Which way the stand faces, taken from the track meeting the node's trunk. A
@@ -61,6 +143,10 @@ function headingAt(network: Network, node: NetworkNode): number {
 
 export function drawNetwork(painter: Painter, network: Network, style: NetworkStyle = {}): void {
   const st = { ...DEFAULT_NETWORK_STYLE, ...style };
+
+  // The foul zones first: they lie on the ground, and everything else at a
+  // turnout stands on top of them.
+  if (st.foul) drawFoul(painter, network, st);
 
   // Derails first: they sit on the rail, and a switch stand near one should be
   // painted over it rather than behind it.

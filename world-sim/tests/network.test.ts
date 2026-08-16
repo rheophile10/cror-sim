@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { CLEARANCE_SEPARATION } from '../src/network.ts';
 import { World, type SceneSpec } from '../src/world.ts';
 
 /**
@@ -332,4 +333,81 @@ test('backing into a switch lined against the movement derails it too', () => {
   run(world, 90);
   assert.equal(train.derailed, true);
   assert.match(train.derailmentReason, /ran through the switch|derail/);
+});
+
+test('the clearance point is measured off the geometry, from both sides', () => {
+  const world = new World(sidingScene());
+  const west = world.network.nodes.get('sw-w')!;
+
+  // Both legs of a turnout, and nothing else. The trunk is not foul of
+  // anything: equipment on it is *on* both routes rather than beside one.
+  assert.deepEqual(
+    [...new Set(west.foul.map((f) => f.trackId))].sort(),
+    ['main-mid', 'siding'],
+  );
+
+  const zone = west.foul.find((f) => f.trackId === 'siding')!;
+  const mate = west.foul.find((f) => f.trackId === 'main-mid')!;
+  // The switch is at the low-mileage end of both, so both stretches start there.
+  assert.equal(zone.from, 0);
+  assert.equal(mate.from, 0);
+  // The two routes have to agree about where they part company. They are
+  // measured independently, so agreeing is evidence rather than arithmetic.
+  assert.ok(Math.abs(zone.to - mate.to) < 8, `${zone.to} vs ${mate.to}`);
+
+  // Just inside is foul; just outside is clear. This is the whole claim.
+  const siding = world.track('siding')!;
+  const main = world.track('main-mid')!;
+  const gapAt = (at: number): number => {
+    const p = siding.at(at);
+    let best = Infinity;
+    for (const sm of main.samples) best = Math.min(best, Math.hypot(sm.x - p.x, sm.y - p.y));
+    return best;
+  };
+  assert.ok(gapAt(zone.to - 12) < CLEARANCE_SEPARATION, 'inside the mark it is foul');
+  assert.ok(gapAt(zone.to + 12) > CLEARANCE_SEPARATION, 'outside it it is clear');
+});
+
+test('a scene can override a clearance point it knows better than the drawing', () => {
+  const world = new World(
+    sidingScene({
+      nodes: [
+        { id: 'sw-w', kind: 'switch', position: 'normal', clearancePoint: 30 },
+        { id: 'sw-e', kind: 'switch', position: 'normal' },
+      ],
+    }),
+  );
+  for (const f of world.network.nodes.get('sw-w')!.foul) assert.equal(f.to - f.from, 30);
+  // And the switch that declared nothing still measures its own.
+  const east = world.network.nodes.get('sw-e')!;
+  assert.ok(east.foul.length > 0 && east.foul.every((f) => f.to - f.from !== 30));
+});
+
+test('two tracks that never separate have no clearance point at all', () => {
+  // Not a turnout: a second track laid three metres from the first for its
+  // whole length. Reporting a number here would be inventing one.
+  const world = new World(
+    sidingScene({
+      tracks: [
+        { id: 'main-w', points: [[2, 20], [16, 20], [28, 20]], to: { node: 'sw-w', port: 'trunk' }, spacing: 2 },
+        {
+          id: 'main-mid',
+          points: [[28, 20], [40, 20], [52, 20]],
+          from: { node: 'sw-w', port: 'normal' },
+          to: { node: 'sw-e', port: 'normal' },
+          spacing: 2,
+        },
+        {
+          id: 'siding',
+          points: [[28, 20], [40, 19.75], [52, 20]],
+          from: { node: 'sw-w', port: 'reverse' },
+          to: { node: 'sw-e', port: 'reverse' },
+          spacing: 2,
+        },
+        { id: 'main-e', points: [[52, 20], [66, 20], [78, 20]], from: { node: 'sw-e', port: 'trunk' }, spacing: 2 },
+      ],
+      trains: [],
+    }),
+  );
+  assert.deepEqual(world.network.nodes.get('sw-w')!.foul, []);
 });

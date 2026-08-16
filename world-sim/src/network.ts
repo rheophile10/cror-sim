@@ -109,7 +109,16 @@ export interface NodeSpec {
   target?: boolean;
   /** 104.1(e)(ii): points spiked in position. */
   spiked?: boolean;
-  /** CROR 114: distance from the points to the clearance point, metres. */
+  /**
+   * CROR 114: distance from the points to the clearance point, metres.
+   *
+   * Normally left out. The clearance point is a fact about the *geometry* — it
+   * is wherever the two routes have opened out far enough that equipment
+   * standing on one is clear of the other — so it is measured off the tracks
+   * rather than declared. Give a number here only to override the measurement,
+   * which is worth doing for a place where the real clearance point is marked
+   * somewhere the drawing does not justify.
+   */
   clearancePoint?: number;
   /** 104.5: which kind of derail this is. */
   derailType?: DerailType;
@@ -120,6 +129,73 @@ export interface NodeSpec {
    * something worse.
    */
   derailing?: boolean;
+}
+
+/**
+ * A stretch of one route that is not clear of another.
+ *
+ * ── What the clearance point is, and why it is worth modelling ──
+ *
+ * Two routes that meet at a turnout do not become separate railways at the
+ * points; they become separate railways at the **clearance point**, which is
+ * wherever the centre lines have opened out far enough that a car standing on
+ * one will not be struck by a movement on the other. Everything between the
+ * points and that mark is foul of both. It is the subject of a rule of its own
+ * because it is the commonest way to leave a train where it will be hit by
+ * something that has a perfectly good route: the switch is lined against you,
+ * the signal is clear for the other movement, and the tail end of your train is
+ * still four feet from being clear.
+ *
+ * It is **measured, not declared**. A clearance point is where the geometry
+ * puts it, and a scene that states one has usually stated a number that its own
+ * drawing does not support — which is exactly the mistake this replaces.
+ */
+export interface FoulStretch {
+  /** The route that is foul over this stretch. */
+  trackId: string;
+  /** Distance along that track, metres. Ordered so `from` < `to`. */
+  from: number;
+  to: number;
+  /** The end of the track the points are at — which end of the stretch is the switch. */
+  end: 'from' | 'to';
+  /** Which other route it is foul of. */
+  ofTrackId: string;
+}
+
+/**
+ * Centre-to-centre separation at which one route is clear of the next, metres.
+ *
+ * Thirteen feet six is the usual North American figure for a clearance point on
+ * plain track, and 4.1 m is that. It is not the same as standard track centres
+ * — a siding sits farther from the main than this — because clearing is about
+ * the swept width of two cars passing, not about where the track was laid.
+ */
+export const CLEARANCE_SEPARATION = 4.1;
+
+/**
+ * How far out from the points a clearance point is looked for, metres.
+ *
+ * Generous for a turnout — no clearance point is two hundred metres out — but
+ * bounded, because the far end of a short siding converges again and a search
+ * without a limit would call the whole siding foul.
+ */
+const FOUL_SEARCH = 250;
+
+/**
+ * How nearly two legs have to point the same way to count as diverging, radians.
+ *
+ * Sixty degrees. Wide enough for a sharp industrial turnout, narrow enough that
+ * the through route — a hundred and eighty degrees round — is never mistaken for
+ * a diverging one.
+ */
+const SAME_WAY = Math.PI / 3;
+
+/** Signed difference between two headings, wrapped to ±180°. */
+function angleBetween(a: number, b: number): number {
+  let d = a - b;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }
 
 /** Which node and port one end of a track is attached to. */
@@ -147,7 +223,14 @@ export interface NetworkNode {
   locked: boolean;
   target: boolean;
   spiked: boolean;
+  /** As declared in the scene, if it was. See `foul` for what is actually used. */
   clearancePoint: number | undefined;
+  /**
+   * The stretch of each diverging route that is **inside the clearance point**:
+   * where standing equipment fouls the other route. Measured from the geometry
+   * at construction. Empty for anything that is not a switch.
+   */
+  foul: FoulStretch[];
   /** 104.5: which kind of derail this is. */
   derailType: DerailType;
   /** For a derail: whether it is set to derail. */
@@ -200,6 +283,7 @@ export class Network {
         target: spec.target ?? true,
         spiked: spec.spiked ?? false,
         clearancePoint: spec.clearancePoint,
+        foul: [],
         derailType: spec.derailType ?? 'standard',
         derailing: spec.derailing ?? DERAIL_DEFAULT_ON[spec.derailType ?? 'standard'],
         ports: new Map(),
@@ -229,6 +313,7 @@ export class Network {
             target: true,
             spiked: false,
             clearancePoint: undefined,
+            foul: [],
             derailType: 'standard',
             derailing: false,
             ports: new Map(),
@@ -254,6 +339,7 @@ export class Network {
       if (node.kind !== 'switch' && node.kind !== 'derail' && node.ports.size < 2) node.kind = 'end';
       this.locate(node);
     }
+    this.measureFoul();
   }
 
   /** Recompute every node's position from the tracks meeting it. */
@@ -263,6 +349,69 @@ export class Network {
       node.y = 0;
       node.z = 0;
       this.locate(node);
+    }
+    this.measureFoul();
+  }
+
+  /**
+   * Work out, for every switch, how much of each diverging route is foul of the
+   * other.
+   *
+   * Walked outward from the points a couple of metres at a time until the two
+   * centre lines are `CLEARANCE_SEPARATION` apart. Done once, at construction:
+   * the answer only changes if the track moves, and track does not move.
+   */
+  measureFoul(): void {
+    for (const node of this.nodes.values()) {
+      node.foul = [];
+      if (node.kind !== 'switch') continue;
+      // The two routes that leave the points **the same way**.
+      //
+      // Not "normal and reverse": a spur trailing off the main leaves by the
+      // reverse port and runs back the way the trunk came, so the pair that
+      // actually diverges is the trunk and the spur. Taking the ports on faith
+      // measured a trailing turnout against the leg pointing the other way and
+      // reported it clear six metres from the points. Which two legs share a
+      // direction is a question the geometry answers.
+      const arms: { track: TrackPath; end: 'from' | 'to'; heading: number }[] = [];
+      for (const conn of node.ports.values()) {
+        const track = this.tracks.get(conn.track);
+        if (!track) continue;
+        const at = conn.end === 'from' ? track.samples[0] : track.samples[track.samples.length - 1];
+        const out =
+          conn.end === 'from'
+            ? track.at(Math.min(FOUL_SEARCH / 4, track.length))
+            : track.at(Math.max(0, track.length - FOUL_SEARCH / 4));
+        if (!at) continue;
+        arms.push({ track, end: conn.end, heading: Math.atan2(out.y - at.y, out.x - at.x) });
+      }
+      if (arms.length < 2) continue;
+
+      const legs: typeof arms = [];
+      for (const arm of arms) {
+        for (const mate of arms) {
+          if (mate === arm) continue;
+          if (Math.abs(angleBetween(arm.heading, mate.heading)) > SAME_WAY) continue;
+          if (!legs.includes(arm)) legs.push(arm);
+        }
+      }
+      if (legs.length < 2) continue;
+
+      for (const leg of legs) {
+        for (const other of legs) {
+          if (other === leg) continue;
+          if (Math.abs(angleBetween(leg.heading, other.heading)) > SAME_WAY) continue;
+          const d = node.clearancePoint ?? clearanceAlong(leg, other);
+          if (d === null) continue;
+          node.foul.push({
+            trackId: leg.track.id,
+            from: leg.end === 'from' ? 0 : Math.max(0, leg.track.length - d),
+            to: leg.end === 'from' ? Math.min(d, leg.track.length) : leg.track.length,
+            end: leg.end,
+            ofTrackId: other.track.id,
+          });
+        }
+      }
     }
   }
 
@@ -388,4 +537,75 @@ export function isHandWorked(node: NetworkNode): boolean {
   if (node.operation === 'power') return false;
   if (node.operation === 'dual-control') return node.handMode;
   return true;
+}
+
+/**
+ * How far from the points one route has to run before it is clear of another.
+ *
+ * Walked outward two metres at a time, comparing against the other route's
+ * samples near the switch. Returns `null` if the two never separate inside
+ * `FOUL_SEARCH` — a pair of tracks running alongside each other the whole way,
+ * which is a drawing mistake rather than a turnout, and is better reported as
+ * "no clearance point" than as a number.
+ *
+ * The **last** point at which the two are still foul, not the first at which
+ * they are clear. Track wanders, and a siding that opens past the mark and then
+ * eases back inside it is foul over the whole of that; taking the first
+ * crossing put clearance points twenty metres short of where a car would still
+ * be struck.
+ */
+function clearanceAlong(
+  leg: { track: TrackPath; end: 'from' | 'to' },
+  other: { track: TrackPath; end: 'from' | 'to' },
+): number | null {
+  const STEP = 2;
+  // Only the other route's first stretch: beyond that it has gone somewhere
+  // else entirely, and a track that loops back near the switch would otherwise
+  // read as still fouling it.
+  // Never look further than halfway along a leg. A siding converges again at
+  // its far switch, and a fixed search ran past the middle of a short one and
+  // found it foul at the *other* end — reporting no clearance point for a
+  // turnout that has a perfectly good one.
+  const limit = Math.min(FOUL_SEARCH, leg.track.length / 2, other.track.length / 2);
+  const near = other.track.samples.filter((sm) => {
+    const along = other.end === 'from' ? sm.s : other.track.length - sm.s;
+    return along <= limit + STEP;
+  });
+  if (near.length < 2) return null;
+
+  let lastFoul = 0;
+  for (let d = STEP; d <= limit; d += STEP) {
+    const at = leg.end === 'from' ? d : leg.track.length - d;
+    const pt = leg.track.at(at);
+    let closest = Infinity;
+    // To the **segments**, not to the sample points. A track is sampled every
+    // six or eight metres, and measuring only to vertices puts a floor of half
+    // that under every answer — which read as three metres of separation right
+    // at the points, where the two routes are the same piece of track.
+    for (let i = 1; i < near.length; i++) {
+      const gap = toSegment(pt, near[i - 1]!, near[i]!);
+      if (gap < closest) closest = gap;
+    }
+    if (closest < CLEARANCE_SEPARATION) lastFoul = d;
+  }
+  // Still foul at the end of the search: a pair of tracks running alongside each
+  // other the whole way, which is a drawing mistake rather than a turnout, and
+  // is better reported as no clearance point than as a number.
+  if (lastFoul >= limit - STEP) return null;
+  return lastFoul + STEP;
+}
+
+/** Distance from a point to a line segment, in plan. */
+function toSegment(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
 }

@@ -1,6 +1,6 @@
 {
   "name": "Whiteshell Subdivision",
-  "description": "48 km of single main track located along easy ground — five signalled sidings, two spurs, three river trestles, three lakes and eight crossings at grade, one of them out of order. Moose, wolves and bears through the whole of it, trespassers on the right of way, and something at end of steel that should not be there at all.",
+  "description": "48 km of single main track located along easy ground \u2014 five signalled sidings, two spurs, three river trestles, three lakes and eight crossings at grade, one of them out of order. Moose, wolves and bears through the whole of it, trespassers on the right of way, and something at end of steel that should not be there at all.",
   "terrain": {
     "cols": 2440,
     "rows": 180,
@@ -7934,8 +7934,7 @@
       "position": "normal",
       "operation": "dual-control",
       "label": "Rennie West",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-rennie-e",
@@ -7943,8 +7942,7 @@
       "position": "normal",
       "operation": "dual-control",
       "label": "Rennie East",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-ophir-w",
@@ -7952,8 +7950,7 @@
       "position": "normal",
       "operation": "dual-control",
       "label": "Ophir West",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-ophir-e",
@@ -7961,8 +7958,7 @@
       "position": "normal",
       "operation": "dual-control",
       "label": "Ophir East",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-brereton-w",
@@ -7970,8 +7966,7 @@
       "position": "normal",
       "operation": "dual-control",
       "label": "Brereton West",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-brereton-e",
@@ -7979,8 +7974,7 @@
       "position": "reverse",
       "operation": "dual-control",
       "label": "Brereton East",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-elma-w",
@@ -7988,8 +7982,7 @@
       "position": "normal",
       "operation": "dual-control",
       "label": "Elma West",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-elma-e",
@@ -7997,8 +7990,7 @@
       "position": "normal",
       "operation": "dual-control",
       "label": "Elma East",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-whitemouth-w",
@@ -8006,8 +7998,7 @@
       "position": "normal",
       "operation": "dual-control",
       "label": "Whitemouth West",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-whitemouth-e",
@@ -8015,8 +8006,7 @@
       "position": "normal",
       "operation": "dual-control",
       "label": "Whitemouth East",
-      "locked": true,
-      "clearancePoint": 55
+      "locked": true
     },
     {
       "id": "sw-kettle",
@@ -8024,8 +8014,7 @@
       "position": "normal",
       "operation": "hand",
       "label": "Kettle Mill",
-      "target": true,
-      "clearancePoint": 50
+      "target": true
     },
     {
       "id": "d-kettle",
@@ -8044,8 +8033,7 @@
       "position": "normal",
       "operation": "hand",
       "label": "Bird Gravel",
-      "target": true,
-      "clearancePoint": 50
+      "target": true
     },
     {
       "id": "d-bird",
@@ -8069,36 +8057,64 @@
           90.318
         ],
         [
-          69.5,
-          90.936
+          63.996,
+          90.453
         ],
         [
-          78,
-          92.019
+          64.992,
+          90.591
         ],
         [
-          93,
-          94.399
+          65.987,
+          90.733
         ],
         [
-          108,
-          97.933
+          75.473,
+          91.353
         ],
         [
-          123,
-          100.511
+          87.948,
+          93.004
         ],
         [
-          138,
-          99.91
+          100.429,
+          95.685
         ],
         [
-          153,
-          96.635
+          112.94,
+          98.614
         ],
         [
-          176.5,
-          91.35
+          125.488,
+          100.24
+        ],
+        [
+          138.045,
+          99.486
+        ],
+        [
+          150.572,
+          96.833
+        ],
+        [
+          163.065,
+          93.789
+        ],
+        [
+          175.544,
+          91.468
+        ],
+        [
+          180.037,
+          90.856
+        ],
+        [
+          181.024,
+          90.635
+        ],
+        [
+          182.012,
+          90.417
         ],
         [
           183,
@@ -8125,44 +8141,72 @@
           95.836
         ],
         [
-          704.5,
-          95.887
+          699.004,
+          95.902
         ],
         [
-          713,
-          95.764
+          700.008,
+          95.965
         ],
         [
-          728,
-          94.566
+          701.012,
+          96.025
         ],
         [
-          743,
-          93.296
+          710.52,
+          95.512
         ],
         [
-          758,
-          92.133
+          723.025,
+          94.568
         ],
         [
-          773,
-          90.785
+          735.525,
+          93.501
         ],
         [
-          788,
-          88.235
+          748.023,
+          92.476
         ],
         [
-          803,
-          83.678
+          760.523,
+          91.518
         ],
         [
-          818,
-          78.949
+          773.034,
+          90.363
         ],
         [
-          831.5,
-          77.494
+          785.562,
+          88.37
+        ],
+        [
+          798.093,
+          84.948
+        ],
+        [
+          810.594,
+          80.65
+        ],
+        [
+          823.037,
+          77.64
+        ],
+        [
+          834.952,
+          77.9
+        ],
+        [
+          835.457,
+          77.935
+        ],
+        [
+          835.964,
+          77.975
+        ],
+        [
+          836.98,
+          78.07
         ],
         [
           838,
@@ -8189,36 +8233,60 @@
           83.652
         ],
         [
-          1144.5,
-          84.23
+          1138.997,
+          83.783
         ],
         [
-          1153,
-          85.114
+          1139.993,
+          83.918
         ],
         [
-          1168,
-          86.269
+          1140.988,
+          84.055
         ],
         [
-          1183,
-          87.542
+          1150.482,
+          84.533
         ],
         [
-          1198,
-          88.667
+          1162.976,
+          85.435
         ],
         [
-          1213,
-          89.433
+          1175.474,
+          86.488
         ],
         [
-          1228,
-          89.528
+          1187.977,
+          87.524
         ],
         [
-          1241.5,
-          88.133
+          1200.482,
+          88.405
+        ],
+        [
+          1212.99,
+          89.013
+        ],
+        [
+          1225.504,
+          89.161
+        ],
+        [
+          1238.029,
+          88.499
+        ],
+        [
+          1245.046,
+          87.61
+        ],
+        [
+          1246.033,
+          87.35
+        ],
+        [
+          1247.017,
+          87.082
         ],
         [
           1248,
@@ -8245,40 +8313,68 @@
           101.185
         ],
         [
-          1584.5,
-          102.654
+          1578.978,
+          101.521
         ],
         [
-          1593,
-          102.875
+          1579.959,
+          101.837
         ],
         [
-          1608,
-          98.723
+          1580.946,
+          102.132
         ],
         [
-          1623,
-          93.882
+          1590.521,
+          102.711
         ],
         [
-          1638,
-          91.36
+          1603.093,
+          100.013
         ],
         [
-          1653,
-          90.455
+          1615.594,
+          95.657
         ],
         [
-          1668,
-          89.826
+          1628.057,
+          92.343
         ],
         [
-          1683,
-          88.865
+          1640.524,
+          90.719
         ],
         [
-          1701.5,
-          86.654
+          1653.012,
+          90.034
+        ],
+        [
+          1665.514,
+          89.525
+        ],
+        [
+          1678.021,
+          88.816
+        ],
+        [
+          1690.529,
+          87.785
+        ],
+        [
+          1703.034,
+          86.458
+        ],
+        [
+          1705.034,
+          86.228
+        ],
+        [
+          1706.023,
+          86.013
+        ],
+        [
+          1707.012,
+          85.797
         ],
         [
           1708,
@@ -8305,36 +8401,64 @@
           94.31
         ],
         [
-          2024.5,
-          95.782
+          2018.983,
+          94.58
         ],
         [
-          2033,
-          97.697
+          2019.966,
+          94.853
         ],
         [
-          2048,
-          99.762
+          2020.948,
+          95.127
         ],
         [
-          2063,
-          100.103
+          2030.448,
+          96.835
         ],
         [
-          2078,
-          98.517
+          2042.963,
+          98.799
         ],
         [
-          2093,
-          95.908
+          2055.493,
+          99.771
         ],
         [
-          2108,
-          93.484
+          2068.027,
+          99.341
         ],
         [
-          2131.5,
-          90.958
+          2080.549,
+          97.695
+        ],
+        [
+          2093.053,
+          95.483
+        ],
+        [
+          2105.543,
+          93.414
+        ],
+        [
+          2118.029,
+          91.901
+        ],
+        [
+          2130.516,
+          90.986
+        ],
+        [
+          2135.013,
+          90.767
+        ],
+        [
+          2136.009,
+          90.623
+        ],
+        [
+          2137.004,
+          90.481
         ],
         [
           2138,
@@ -8361,16 +8485,32 @@
           96.679
         ],
         [
-          942,
-          98.079
+          951.978,
+          96.555
         ],
         [
-          927,
-          99.279
+          950.957,
+          96.431
         ],
         [
-          908,
-          99.879
+          949.936,
+          96.309
+        ],
+        [
+          944.837,
+          95.726
+        ],
+        [
+          937.736,
+          95.06
+        ],
+        [
+          926.689,
+          94.518
+        ],
+        [
+          907.856,
+          93.655
         ]
       ],
       "from": {
@@ -8388,12 +8528,12 @@
       "label": "Kettle Mill Track",
       "points": [
         [
-          908,
-          99.879
+          907.856,
+          93.655
         ],
         [
-          883,
-          100.079
+          882.722,
+          92.691
         ]
       ],
       "from": {
@@ -8414,16 +8554,32 @@
           88.111
         ],
         [
-          1802,
-          89.511
+          1811.992,
+          88.134
         ],
         [
-          1787,
-          90.711
+          1810.984,
+          88.154
         ],
         [
-          1768,
-          91.311
+          1809.975,
+          88.172
+        ],
+        [
+          1804.924,
+          88.223
+        ],
+        [
+          1797.839,
+          88.205
+        ],
+        [
+          1786.698,
+          88.045
+        ],
+        [
+          1767.723,
+          86.617
         ]
       ],
       "from": {
@@ -8441,12 +8597,12 @@
       "label": "Bird Gravel Track",
       "points": [
         [
-          1768,
-          91.311
+          1767.723,
+          86.617
         ],
         [
-          1743,
-          91.511
+          1743.084,
+          85.961
         ]
       ],
       "from": {
@@ -10160,9 +10316,9 @@
       "id": "x-8",
       "label": "Road 9",
       "track": "sid-rennie",
-      "at": 2240.7,
+      "at": 2238.9,
       "road": "stn-rennie",
-      "angle": 96.6,
+      "angle": 94.1,
       "width": 7,
       "protection": "passive"
     },
@@ -10180,9 +10336,9 @@
       "id": "x-10",
       "label": "Road 11",
       "track": "sid-ophir",
-      "at": 1407.9,
+      "at": 1407.5,
       "road": "stn-ophir",
-      "angle": 89.6,
+      "angle": 89.5,
       "width": 7,
       "protection": "flashing-lights"
     },
@@ -10200,7 +10356,7 @@
       "id": "x-12",
       "label": "Road 13",
       "track": "sid-brereton",
-      "at": 1108.3,
+      "at": 1106.9,
       "road": "stn-brereton",
       "angle": 80.1,
       "width": 7,
@@ -10220,9 +10376,9 @@
       "id": "x-14",
       "label": "Road 15",
       "track": "sid-elma",
-      "at": 1339.9,
+      "at": 1339.2,
       "road": "stn-elma",
-      "angle": 87.9,
+      "angle": 88.2,
       "width": 7,
       "protection": "passive"
     },
@@ -10240,9 +10396,9 @@
       "id": "x-16",
       "label": "Road 17",
       "track": "sid-whitemouth",
-      "at": 1216.8,
+      "at": 1214.5,
       "road": "stn-whitemouth",
-      "angle": 92.3,
+      "angle": 92.9,
       "width": 7,
       "protection": "flashing-lights"
     },
@@ -10453,7 +10609,7 @@
     },
     {
       "id": "G881",
-      "label": "G881 westward grain — RUNS SIGNALS",
+      "label": "G881 westward grain \u2014 RUNS SIGNALS",
       "track": "main-5",
       "position": 2100,
       "direction": -1,
@@ -10614,7 +10770,7 @@
       "crew": true,
       "track": "sid-rennie",
       "at": 2189,
-      "offset": 4
+      "offset": -4
     },
     {
       "id": "eng",
@@ -10623,7 +10779,7 @@
       "crew": true,
       "track": "sid-rennie",
       "at": 2189,
-      "offset": -4
+      "offset": -8
     },
     {
       "id": "tres-0",
@@ -14072,99 +14228,99 @@
     {
       "kind": "building",
       "at": [
-        194.24,
-        80.41
+        172.63,
+        95.48
       ],
-      "width": 16,
-      "depth": 9,
-      "height": 6,
-      "rotation": -7,
-      "roof": "gable",
-      "color": "#9c8a6e"
-    },
-    {
-      "kind": "building",
-      "at": [
-        174,
-        92.66
-      ],
-      "width": 13,
+      "width": 9,
       "depth": 7,
       "height": 4,
-      "rotation": -10,
-      "roof": "gable",
-      "color": "#8f7a5c"
-    },
-    {
-      "kind": "building",
-      "at": [
-        176.65,
-        97.56
-      ],
-      "width": 13,
-      "depth": 11,
-      "height": 5,
-      "rotation": 9,
+      "rotation": 6,
       "roof": "gable",
       "color": "#7e8b73"
     },
     {
       "kind": "building",
       "at": [
-        172.33,
-        94.01
+        172.36,
+        97.25
       ],
       "width": 13,
       "depth": 11,
-      "height": 5,
-      "rotation": 6,
+      "height": 6,
+      "rotation": -2,
       "roof": "gable",
-      "color": "#8f7a5c"
+      "color": "#8a8f96"
     },
     {
       "kind": "building",
       "at": [
-        171.78,
-        99.36
+        172.65,
+        99.23
+      ],
+      "width": 16,
+      "depth": 7,
+      "height": 6,
+      "rotation": 4,
+      "roof": "gable",
+      "color": "#8a8f96"
+    },
+    {
+      "kind": "building",
+      "at": [
+        175.05,
+        92.46
+      ],
+      "width": 13,
+      "depth": 9,
+      "height": 5,
+      "rotation": -3,
+      "roof": "gable",
+      "color": "#7e8b73"
+    },
+    {
+      "kind": "building",
+      "at": [
+        176.55,
+        99.75
       ],
       "width": 16,
       "depth": 11,
       "height": 6,
-      "rotation": 12,
-      "roof": "gable",
-      "color": "#8f7a5c"
-    },
-    {
-      "kind": "building",
-      "at": [
-        175.34,
-        100.93
-      ],
-      "width": 11,
-      "depth": 7,
-      "height": 5,
-      "rotation": -10,
+      "rotation": 0,
       "roof": "gable",
       "color": "#9c8a6e"
     },
     {
       "kind": "building",
       "at": [
-        174.52,
-        95.79
+        172.16,
+        95.28
+      ],
+      "width": 9,
+      "depth": 7,
+      "height": 4,
+      "rotation": 1,
+      "roof": "gable",
+      "color": "#9c8a6e"
+    },
+    {
+      "kind": "building",
+      "at": [
+        174.8,
+        98.24
       ],
       "width": 11,
       "depth": 9,
-      "height": 6,
-      "rotation": -6,
+      "height": 4,
+      "rotation": -8,
       "roof": "gable",
-      "color": "#9c8a6e"
+      "color": "#7e8b73"
     },
     {
       "kind": "building",
       "at": [
         767.26,
-        92.49
+        92.44
       ],
       "width": 24,
       "depth": 14,
@@ -14191,93 +14347,93 @@
     {
       "kind": "building",
       "at": [
-        784.26,
-        73.78
-      ],
-      "width": 16,
-      "depth": 9,
-      "height": 4,
-      "rotation": 0,
-      "roof": "gable",
-      "color": "#7e8b73"
-    },
-    {
-      "kind": "building",
-      "at": [
-        769.75,
-        98.02
-      ],
-      "width": 16,
-      "depth": 11,
-      "height": 5,
-      "rotation": -12,
-      "roof": "gable",
-      "color": "#9c8a6e"
-    },
-    {
-      "kind": "building",
-      "at": [
-        766.62,
-        98.74
+        786.31,
+        75.61
       ],
       "width": 11,
-      "depth": 11,
-      "height": 5,
-      "rotation": -8,
+      "depth": 7,
+      "height": 6,
+      "rotation": 7,
       "roof": "gable",
       "color": "#8a8f96"
     },
     {
       "kind": "building",
       "at": [
-        769.35,
-        94.58
+        766.93,
+        91.75
       ],
-      "width": 9,
-      "depth": 9,
-      "height": 5,
-      "rotation": 1,
+      "width": 11,
+      "depth": 7,
+      "height": 6,
+      "rotation": 14,
       "roof": "gable",
-      "color": "#7e8b73"
+      "color": "#8a8f96"
     },
     {
       "kind": "building",
       "at": [
-        770.08,
-        96.3
+        769.3,
+        93.59
       ],
-      "width": 9,
+      "width": 13,
       "depth": 11,
-      "height": 5,
-      "rotation": 3,
+      "height": 6,
+      "rotation": 13,
       "roof": "gable",
       "color": "#7e8b73"
     },
     {
       "kind": "building",
       "at": [
-        767.81,
-        98.72
+        766.73,
+        91.8
       ],
       "width": 13,
       "depth": 9,
-      "height": 4,
-      "rotation": 2,
+      "height": 6,
+      "rotation": -1,
       "roof": "gable",
-      "color": "#8a8f96"
+      "color": "#9c8a6e"
     },
     {
       "kind": "building",
       "at": [
-        768.12,
-        98.94
+        767.51,
+        95.26
       ],
       "width": 16,
+      "depth": 9,
+      "height": 6,
+      "rotation": -2,
+      "roof": "gable",
+      "color": "#8f7a5c"
+    },
+    {
+      "kind": "building",
+      "at": [
+        767.86,
+        100.21
+      ],
+      "width": 9,
       "depth": 11,
-      "height": 4,
+      "height": 6,
+      "rotation": -5,
+      "roof": "gable",
+      "color": "#7e8b73"
+    },
+    {
+      "kind": "building",
+      "at": [
+        767.23,
+        94.54
+      ],
+      "width": 13,
+      "depth": 11,
+      "height": 5,
       "rotation": 12,
       "roof": "gable",
-      "color": "#9c8a6e"
+      "color": "#8f7a5c"
     },
     {
       "kind": "building",
@@ -14310,91 +14466,91 @@
     {
       "kind": "building",
       "at": [
-        1204.19,
-        102.56
+        1193.11,
+        97.2
       ],
-      "width": 11,
-      "depth": 7,
-      "height": 6,
-      "rotation": -3,
-      "roof": "gable",
-      "color": "#8a8f96"
-    },
-    {
-      "kind": "building",
-      "at": [
-        1194.64,
-        92.56
-      ],
-      "width": 13,
-      "depth": 7,
-      "height": 5,
-      "rotation": 8,
-      "roof": "gable",
-      "color": "#9c8a6e"
-    },
-    {
-      "kind": "building",
-      "at": [
-        1192.78,
-        93
-      ],
-      "width": 11,
+      "width": 9,
       "depth": 11,
-      "height": 4,
-      "rotation": 11,
-      "roof": "gable",
-      "color": "#9c8a6e"
-    },
-    {
-      "kind": "building",
-      "at": [
-        1210.77,
-        103
-      ],
-      "width": 16,
-      "depth": 9,
-      "height": 4,
-      "rotation": 1,
-      "roof": "gable",
-      "color": "#9c8a6e"
-    },
-    {
-      "kind": "building",
-      "at": [
-        1215.52,
-        103.06
-      ],
-      "width": 16,
-      "depth": 7,
-      "height": 4,
-      "rotation": -3,
+      "height": 5,
+      "rotation": -14,
       "roof": "gable",
       "color": "#7e8b73"
     },
     {
       "kind": "building",
       "at": [
-        1205.07,
-        100.66
+        1205.68,
+        102.9
       ],
-      "width": 16,
-      "depth": 9,
-      "height": 5,
-      "rotation": 6,
+      "width": 11,
+      "depth": 11,
+      "height": 4,
+      "rotation": 3,
       "roof": "gable",
-      "color": "#8a8f96"
+      "color": "#7e8b73"
     },
     {
       "kind": "building",
       "at": [
-        1192.58,
-        92.52
+        1210.03,
+        77.13
+      ],
+      "width": 11,
+      "depth": 7,
+      "height": 5,
+      "rotation": 1,
+      "roof": "gable",
+      "color": "#8f7a5c"
+    },
+    {
+      "kind": "building",
+      "at": [
+        1193.19,
+        96.53
       ],
       "width": 16,
       "depth": 11,
+      "height": 5,
+      "rotation": 0,
+      "roof": "gable",
+      "color": "#7e8b73"
+    },
+    {
+      "kind": "building",
+      "at": [
+        1210.52,
+        103
+      ],
+      "width": 11,
+      "depth": 11,
       "height": 6,
-      "rotation": 10,
+      "rotation": -11,
+      "roof": "gable",
+      "color": "#8f7a5c"
+    },
+    {
+      "kind": "building",
+      "at": [
+        1210.02,
+        102.96
+      ],
+      "width": 11,
+      "depth": 11,
+      "height": 6,
+      "rotation": -2,
+      "roof": "gable",
+      "color": "#9c8a6e"
+    },
+    {
+      "kind": "building",
+      "at": [
+        1194.32,
+        91.35
+      ],
+      "width": 16,
+      "depth": 7,
+      "height": 4,
+      "rotation": -9,
       "roof": "gable",
       "color": "#8f7a5c"
     },
@@ -14429,25 +14585,51 @@
     {
       "kind": "building",
       "at": [
-        1645.46,
-        94.98
+        1657.92,
+        100.07
       ],
-      "width": 11,
-      "depth": 9,
+      "width": 16,
+      "depth": 11,
       "height": 6,
-      "rotation": 9,
+      "rotation": -2,
       "roof": "gable",
-      "color": "#8f7a5c"
+      "color": "#8a8f96"
     },
     {
       "kind": "building",
       "at": [
-        1654.86,
-        99.98
+        1642.46,
+        91.33
+      ],
+      "width": 13,
+      "depth": 11,
+      "height": 6,
+      "rotation": -4,
+      "roof": "gable",
+      "color": "#9c8a6e"
+    },
+    {
+      "kind": "building",
+      "at": [
+        1657.83,
+        101.94
+      ],
+      "width": 16,
+      "depth": 7,
+      "height": 6,
+      "rotation": 10,
+      "roof": "gable",
+      "color": "#8a8f96"
+    },
+    {
+      "kind": "building",
+      "at": [
+        1643.23,
+        99.11
       ],
       "width": 16,
       "depth": 9,
-      "height": 4,
+      "height": 5,
       "rotation": -2,
       "roof": "gable",
       "color": "#7e8b73"
@@ -14455,73 +14637,47 @@
     {
       "kind": "building",
       "at": [
-        1652.42,
-        98.77
+        1646.53,
+        95.39
       ],
       "width": 16,
-      "depth": 11,
-      "height": 4,
-      "rotation": -8,
-      "roof": "gable",
-      "color": "#9c8a6e"
-    },
-    {
-      "kind": "building",
-      "at": [
-        1654.66,
-        100.08
-      ],
-      "width": 9,
       "depth": 9,
-      "height": 6,
-      "rotation": -6,
+      "height": 4,
+      "rotation": 0,
       "roof": "gable",
-      "color": "#8f7a5c"
+      "color": "#7e8b73"
     },
     {
       "kind": "building",
       "at": [
-        1664.21,
-        101.37
+        1662.56,
+        101.82
       ],
       "width": 11,
       "depth": 11,
-      "height": 4,
-      "rotation": -9,
-      "roof": "gable",
-      "color": "#8a8f96"
-    },
-    {
-      "kind": "building",
-      "at": [
-        1654.08,
-        102.23
-      ],
-      "width": 9,
-      "depth": 11,
       "height": 6,
-      "rotation": 7,
+      "rotation": -6,
       "roof": "gable",
       "color": "#8a8f96"
     },
     {
       "kind": "building",
       "at": [
-        1642.5,
-        96.51
+        1644.57,
+        96.46
       ],
       "width": 13,
       "depth": 9,
-      "height": 5,
-      "rotation": 2,
+      "height": 6,
+      "rotation": -7,
       "roof": "gable",
-      "color": "#8f7a5c"
+      "color": "#7e8b73"
     },
     {
       "kind": "building",
       "at": [
-        2077.27,
-        99.72
+        2077.26,
+        99.66
       ],
       "width": 24,
       "depth": 14,
@@ -14548,93 +14704,93 @@
     {
       "kind": "building",
       "at": [
-        2094.5,
-        106.82
-      ],
-      "width": 16,
-      "depth": 9,
-      "height": 4,
-      "rotation": -9,
-      "roof": "gable",
-      "color": "#8f7a5c"
-    },
-    {
-      "kind": "building",
-      "at": [
-        2090.21,
-        110.54
-      ],
-      "width": 13,
-      "depth": 11,
-      "height": 4,
-      "rotation": 2,
-      "roof": "gable",
-      "color": "#9c8a6e"
-    },
-    {
-      "kind": "building",
-      "at": [
-        2093.36,
-        108.23
-      ],
-      "width": 11,
-      "depth": 11,
-      "height": 4,
-      "rotation": 4,
-      "roof": "gable",
-      "color": "#8f7a5c"
-    },
-    {
-      "kind": "building",
-      "at": [
-        2087.29,
-        111.24
+        2093.23,
+        110.44
       ],
       "width": 9,
-      "depth": 11,
-      "height": 4,
-      "rotation": 6,
+      "depth": 7,
+      "height": 5,
+      "rotation": 0,
+      "roof": "gable",
+      "color": "#8f7a5c"
+    },
+    {
+      "kind": "building",
+      "at": [
+        2093.9,
+        109.92
+      ],
+      "width": 13,
+      "depth": 7,
+      "height": 5,
+      "rotation": -2,
       "roof": "gable",
       "color": "#8a8f96"
     },
     {
       "kind": "building",
       "at": [
-        2088.71,
-        110.65
+        2102.02,
+        108.58
       ],
-      "width": 11,
+      "width": 16,
       "depth": 7,
       "height": 5,
-      "rotation": 12,
+      "rotation": 7,
+      "roof": "gable",
+      "color": "#8a8f96"
+    },
+    {
+      "kind": "building",
+      "at": [
+        2080.62,
+        100.88
+      ],
+      "width": 13,
+      "depth": 7,
+      "height": 6,
+      "rotation": -11,
       "roof": "gable",
       "color": "#7e8b73"
     },
     {
       "kind": "building",
       "at": [
-        2090.39,
-        108.64
+        2093.88,
+        109.82
       ],
       "width": 9,
       "depth": 7,
       "height": 4,
-      "rotation": 4,
+      "rotation": -3,
       "roof": "gable",
-      "color": "#8f7a5c"
+      "color": "#8a8f96"
     },
     {
       "kind": "building",
       "at": [
-        2079.4,
-        99.73
+        2089.17,
+        108.9
       ],
-      "width": 16,
-      "depth": 9,
-      "height": 6,
-      "rotation": -6,
+      "width": 13,
+      "depth": 11,
+      "height": 5,
+      "rotation": 14,
       "roof": "gable",
-      "color": "#8f7a5c"
+      "color": "#8a8f96"
+    },
+    {
+      "kind": "building",
+      "at": [
+        2077.35,
+        100
+      ],
+      "width": 11,
+      "depth": 11,
+      "height": 5,
+      "rotation": -12,
+      "roof": "gable",
+      "color": "#7e8b73"
     },
     {
       "kind": "building",
@@ -15044,7 +15200,7 @@
       "kind": "building",
       "at": [
         1755.5,
-        93.13
+        92.71
       ],
       "width": 46,
       "depth": 26,
@@ -15065,8 +15221,8 @@
     "yaw": 30,
     "pitch": 32,
     "focus": {
-      "x": 3412,
-      "y": 1848,
+      "x": 3414,
+      "y": 1842,
       "z": 195
     }
   }
