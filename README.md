@@ -42,3 +42,17 @@ exists to be read by that layer.
 
 See [`world-sim/README.md`](world-sim/README.md) for what the simulation does in
 detail, the scene JSON schema, and an honest list of what it does not do yet.
+
+## cror.ca
+
+The published site is assembled in [`site/`](site): a menu at the root with the
+viewer above at `sim/`, the conductor game at `game/`, and the CN study aid at
+`study/`, sealed under a password (Argon2id + XChaCha20-Poly1305; its data chunks
+stay lazy and decrypt as they load). The game and study aid come from local
+projects with no remote, so their builds are committed in `site/vendor/`:
+
+```sh
+STUDY_AID_PASSWORD='…' npm run pack --prefix site   # refresh site/vendor from ../../conductor-game and ../internal-tools
+npm run build --prefix world-sim-app && npm run build --prefix site   # site/dist
+STUDY_AID_PASSWORD='…' npm test --prefix site       # Chromium, file:// and http
+```

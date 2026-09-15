@@ -1,0 +1,38 @@
+:root {
+  --ground: #f4f1ea;
+  --card: #fffdf8;
+  --ink: #1d2327;
+  --muted: #5d676d;
+  --line: #d9d3c6;
+  --accent: #b5361f;
+  --on-accent: #fff;
+  --bad: #b5361f;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #15191b;
+    --card: #1e2427;
+    --ink: #e9e6df;
+    --muted: #9aa3a8;
+    --line: #333b3f;
+    --accent: #e0664b;
+    --on-accent: #15191b;
+    --bad: #ff8a70;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--ground);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: max(3rem, env(safe-area-inset-top)) 1rem max(3rem, env(safe-area-inset-bottom));
+}
+main { max-width: 44rem; margin: 0 auto; }
+a { color: inherit; }
+h1 { font-size: clamp(1.8rem, 5vw, 2.4rem); line-height: 1.1; margin: 0.25rem 0 0.5rem; letter-spacing: -0.01em; }
+.eyebrow { margin: 0; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.eyebrow a { text-decoration: none; }
+.lede { margin: 0; color: var(--muted); }
