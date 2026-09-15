@@ -1,4 +1,8 @@
-# Build the viewer and publish it to GitHub Pages.
+# Build the viewer, assemble cror.ca around it, and publish to GitHub Pages.
+#
+# The published site is `site/dist`: a menu at the root, this viewer at `sim/`,
+# and the conductor game and the sealed study aid from `site/vendor/` (committed,
+# because their source projects have no remote — see site/pack.mjs).
 #
 # The app builds to one self-contained `dist/index.html` with `base: './'`, so
 # there is nothing to configure for the `/cror-sim/` subpath and no assets to
@@ -39,16 +43,19 @@ jobs:
         run: |
           npm ci --prefix world-sim
           npm ci --prefix world-sim-app
+          npm ci --prefix site
       # Run the library's tests before publishing. A green page built on a red
       # library is worse than no page.
       - name: Test the library
         run: npm test --prefix world-sim
       - name: Build the viewer
         run: npm run build --prefix world-sim-app
+      - name: Assemble the site
+        run: npm run build --prefix site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: world-sim-app/dist
+          path: site/dist
 
   deploy:
     needs: build
