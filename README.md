@@ -46,13 +46,11 @@ detail, the scene JSON schema, and an honest list of what it does not do yet.
 ## cror.ca
 
 The published site is assembled in [`site/`](site): a menu at the root with the
-viewer above at `sim/`, the conductor game at `game/`, and the CN study aid at
-`study/`, sealed under a password (Argon2id + XChaCha20-Poly1305; its data chunks
-stay lazy and decrypt as they load). The game and study aid come from local
-projects with no remote, so their builds are committed in `site/vendor/`:
+viewer above at `sim/` and the conductor game at `game/`. The game comes from a
+local project with no remote, so its build is committed in `site/vendor/`:
 
 ```sh
-STUDY_AID_PASSWORD='…' npm run pack --prefix site   # refresh site/vendor from ../../conductor-game and ../internal-tools
+npm run pack --prefix site                                            # refresh site/vendor from ../../conductor-game
 npm run build --prefix world-sim-app && npm run build --prefix site   # site/dist
-STUDY_AID_PASSWORD='…' npm test --prefix site       # Chromium, file:// and http
+npm test --prefix site                                                # Chromium, file:// and http
 ```

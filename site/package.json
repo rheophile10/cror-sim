@@ -3,15 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "cror.ca: a menu over the simulator, the conductor game and the password-locked study aid.",
+  "description": "cror.ca: a menu over the simulator and the conductor game.",
   "scripts": {
     "pack": "node pack.mjs",
     "build": "node build.mjs",
     "test": "node test/site.test.mjs"
-  },
-  "dependencies": {
-    "@noble/ciphers": "2.1.1",
-    "hash-wasm": "4.12.0"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

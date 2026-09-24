@@ -1,8 +1,8 @@
 # Build the viewer, assemble cror.ca around it, and publish to GitHub Pages.
 #
 # The published site is `site/dist`: a menu at the root, this viewer at `sim/`,
-# and the conductor game and the sealed study aid from `site/vendor/` (committed,
-# because their source projects have no remote — see site/pack.mjs).
+# and the conductor game from `site/vendor/` (committed, because its source
+# project has no remote — see site/pack.mjs).
 #
 # The app builds to one self-contained `dist/index.html` with `base: './'`, so
 # there is nothing to configure for the `/cror-sim/` subpath and no assets to
