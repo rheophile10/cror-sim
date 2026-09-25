@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-O3SnxPGtPQf4gbPX0jDZqUmkRMfQVead3GMAcPG8eIo='; style-src 'sha256-M8hlWcjtvoPwmIScNCi6q00hPofBkJtLIbmnBerTGJs='; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-2Le0PVOI36hsG0SXyz9hCium29p6A0jEq5rfWNtxzbw='; style-src 'sha256-M8hlWcjtvoPwmIScNCi6q00hPofBkJtLIbmnBerTGJs='; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Reader — CROR 2025</title>
 <style>:root { --ink:#111; --bg:#fff; --mute:#666; --line:#ddd; --accent:#1d4ed8; --good:#15803d; --bad:#b91c1c; }
 * { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 Arial, sans-serif; -webkit-user-select:none; user-select:none }
@@ -297,7 +297,7 @@ mark.rnote { background:#fde68a; cursor:help; padding:0 1px; border-bottom:2px s
       goTo(n.id);
     } }, heading(n)), n.kind === "subrule" || n.kind === "definition" ? h("span", { class: "small" }, " ", n.text.slice(0, 90), n.text.length > 90 ? "\u2026" : "") : null)));
     const main = () => {
-      if (!at) return h("div", {}, h("h2", {}, opts.doc.title), h("p", { class: "small" }, `${opts.doc.edition || ""} \xB7 ${opts.doc.source || ""}`), list(ix.roots));
+      if (!at) return h("div", {}, h("h2", {}, opts.doc.title), h("p", { class: "small" }, `${opts.doc.edition || ""} \xB7 ${opts.doc.source || ""}`), opts.doc.pdfSha256 ? h("p", { class: "small" }, "Extracted from the PDF with SHA-256 ", h("span", { class: "complete" }, opts.doc.pdfSha256), opts.doc.url ? [" \u2014 ", h("a", { href: opts.doc.url, target: "_blank", rel: "noopener" }, "the posted file")] : null, ". Hash the download yourself to check it is the same edition.") : null, list(ix.roots));
       const n = ix.get(at);
       const kids = ix.children(n.id);
       return h(
@@ -378,6 +378,8 @@ mark.rnote { background:#fde68a; cursor:help; padding:0 1px; border-bottom:2px s
     edition: "January 28, 2025",
     source: "Transport Canada \u2014 https://tc.canada.ca/en/rail-transportation/rules/2024-2025/canadian-rail-operating-rules",
     extracted: "2025_CROR_current_TransportCanada.pdf",
+    pdfSha256: "48dfd05518a6a26c07c86ba0fc9d86707aaab04fdab635f534790faf9b26806c",
+    url: "https://tc.canada.ca/sites/default/files/2025-01/Jan_2025_Canadian_rail_operating_rules_EN.pdf",
     nodes: [
       {
         id: "sec:definitions",
