@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-CAx3Y6CvAlGzB842rlSkWDI0lI4UpXE/ikyH5x1pioU='; style-src 'sha256-vnSwBDqyVXlgF8G9s4+JAA5Lg0oZfTrlcn46tWyy0ks='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-VXwZPonfIp4+BuFJrcvUkywqNGZsKnCgTGv+VjYbh8Y='; style-src 'sha256-bsNQAe9HTfQn15OCTlSa557Mf6pOzutiK/sa6BHyYWs='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast</title>
 <style>:root { --ink:#111; --bg:#fff; --mute:#666; --line:#ddd; --accent:#1d4ed8; --good:#15803d; --bad:#b91c1c; }
 * { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 Arial, sans-serif; -webkit-user-select:none; user-select:none }
@@ -26,6 +26,12 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
 .meter { height:10px; background:#eee; border-radius:5px; width:160px } .meter div { height:100%; background:var(--good); border-radius:5px }
 .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin:12px 0 } .tabs button { border:none; border-radius:8px 8px 0 0; background:none } .tabs button.on { background:#eef2ff; color:var(--accent); font-weight:bold }
 @media print { html { display:none !important } }
+nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { color:var(--accent); text-decoration:none }
+.roles { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin:16px 0 }
+.rolecard { display:flex; flex-direction:column; align-items:flex-start; gap:6px; padding:20px; text-align:left; border:1px solid var(--line); border-radius:12px; background:#fff; font:inherit } .rolecard b { font-size:20px } .rolecard span { color:var(--mute) } .rolecard:hover { border-color:var(--accent) }
+.avatar { border-radius:50%; object-fit:cover; background:#ccd; color:#fff; text-align:center; display:inline-block; vertical-align:middle }
+.steps { padding-left:20px } .steps li { margin:10px 0; padding:8px 10px; border-radius:8px } .steps li.done { color:var(--mute) } .steps li.next { background:#eef2ff } .steps li.later { opacity:.7 }
+.drop textarea { border:none; background:transparent; max-width:none; text-align:center }
 </style>
 </head>
 <body>
@@ -45,9 +51,9 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
     for (const c of children.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
     return el;
   };
-  var mount = (root3, ...nodes) => {
-    root3.replaceChildren(...nodes.flat(Infinity).filter(Boolean));
-    return root3;
+  var mount = (root4, ...nodes) => {
+    root4.replaceChildren(...nodes.flat(Infinity).filter(Boolean));
+    return root4;
   };
   var download = (name, content, type = "text/plain") => {
     const url = URL.createObjectURL(content instanceof Blob ? content : new Blob([content], { type }));
@@ -87,7 +93,7 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
   var sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
 
   // src/armor.js
-  var KINDS = ["CREW", "TGBO", "RELEASE", "CANCEL", "SHEET"];
+  var KINDS = ["PROFILE", "TGBO", "RELEASE", "CANCEL", "SHEET", "BOOK", "APPROVAL", "REPORT"];
   var wrap76 = (s) => s.replace(/(.{76})/g, "$1\n").trim();
   var armor = async (kind, body, headers = {}) => {
     const bytes = utf8(JSON.stringify(body));
@@ -116,65 +122,6 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
   };
   var sniff = (s) => (/-----BEGIN BALLAST ([A-Z]+)-----/.exec(s) || [])[1] || null;
 
-  // src/crew.js
-  var registerCrew = (name, pin, pub) => armor("CREW", { v: 1, kind: "crew", name, pin: String(pin), pub }, { train: `CN ${pin}`, name });
-  var readCrew = async (t) => {
-    const { body } = await dearmor(t, "CREW");
-    if (!/^\d{4,8}$/.test(body.pin)) throw new Error("bad PIN");
-    return body;
-  };
-  var CRC = (() => {
-    const t = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
-      t[n] = c >>> 0;
-    }
-    return t;
-  })();
-  var crc32 = (b) => {
-    let c = 4294967295;
-    for (const x of b) c = CRC[(c ^ x) & 255] ^ c >>> 8;
-    return (c ^ 4294967295) >>> 0;
-  };
-  var u32 = (n) => new Uint8Array([n >>> 24, n >>> 16 & 255, n >>> 8 & 255, n & 255]);
-  var chunk = (type, data) => {
-    const t = utf8(type);
-    const td = new Uint8Array(t.length + data.length);
-    td.set(t);
-    td.set(data, t.length);
-    const out = new Uint8Array(12 + data.length);
-    out.set(u32(data.length));
-    out.set(td, 4);
-    out.set(u32(crc32(td)), 8 + data.length);
-    return out;
-  };
-  var badgeWrite = (png, crewText) => {
-    const data = new Uint8Array([...utf8("ballast"), 0, ...utf8(crewText)]);
-    const c = chunk("tEXt", data);
-    const ihdrEnd = 8 + 12 + 13;
-    const out = new Uint8Array(png.length + c.length);
-    out.set(png.slice(0, ihdrEnd));
-    out.set(c, ihdrEnd);
-    out.set(png.slice(ihdrEnd), ihdrEnd + c.length);
-    return out;
-  };
-  var badgeRead = (png) => {
-    let p = 8;
-    while (p + 8 <= png.length) {
-      const len = (png[p] << 24 | png[p + 1] << 16 | png[p + 2] << 8 | png[p + 3]) >>> 0;
-      const type = text(png.slice(p + 4, p + 8));
-      if (type === "tEXt") {
-        const d = png.slice(p + 8, p + 8 + len);
-        const z = d.indexOf(0);
-        if (text(d.slice(0, z)) === "ballast") return text(d.slice(z + 1));
-      }
-      if (type === "IEND") break;
-      p += 12 + len;
-    }
-    return null;
-  };
-
   // src/app/store.js
   var DB = "ballast";
   var VER = 1;
@@ -197,20 +144,52 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
   var set = (k, v) => tx("readwrite", (s) => s.put(v, k));
   var del = (k) => tx("readwrite", (s) => s.delete(k));
 
-  // src/crypto.js
+  // src/profile.js
   var subtle = crypto.subtle;
-  var EC = { name: "ECDH", namedCurve: "P-256" };
-  var keypair = async (extractable = false) => {
-    const kp = await subtle.generateKey(EC, extractable, ["deriveBits"]);
-    return { priv: kp.privateKey, pub: b64url(new Uint8Array(await subtle.exportKey("raw", kp.publicKey))) };
+  var ECDH = { name: "ECDH", namedCurve: "P-256" };
+  var ECDSA = { name: "ECDSA", namedCurve: "P-256" };
+  var ROLES = ["crew", "rtc", "superintendent"];
+  var makeProfile = async (role, name, pin, photo = "", extractable = false) => {
+    if (!ROLES.includes(role)) throw new Error(`bad role ${role}`);
+    if (!/^\d{4,8}$/.test(String(pin))) throw new Error("PIN must be 4\u20138 digits");
+    const kx = await subtle.generateKey(ECDH, extractable, ["deriveBits"]);
+    const ks = await subtle.generateKey(ECDSA, extractable, ["sign", "verify"]);
+    return {
+      role,
+      name: String(name).trim(),
+      pin: String(pin).trim(),
+      photo,
+      pub: b64url(new Uint8Array(await subtle.exportKey("raw", kx.publicKey))),
+      sig: b64url(new Uint8Array(await subtle.exportKey("raw", ks.publicKey))),
+      priv: kx.privateKey,
+      sign: ks.privateKey
+    };
   };
-  var importPub = (pub) => subtle.importKey("raw", unb64url(pub), EC, true, []);
-  var exportPriv = (priv) => subtle.exportKey("jwk", priv);
-  var importPriv = (jwk, extractable = true) => subtle.importKey("jwk", jwk, EC, extractable, ["deriveBits"]);
-  var shared = async (priv, theirPub) => new Uint8Array(await subtle.deriveBits({ name: "ECDH", public: await importPub(theirPub) }, priv, 256));
+  var publicProfile = ({ role, name, pin, pub, sig, photo }) => ({ role, name, pin, pub, sig, photo });
+  var profileText = (p) => armor("PROFILE", { v: 1, kind: "profile", ...publicProfile(p) }, { role: p.role, name: p.name, pin: p.pin });
+  var readProfile = async (t) => {
+    const { body } = await dearmor(t, "PROFILE");
+    if (!ROLES.includes(body.role)) throw new Error("bad role");
+    if (!/^\d{4,8}$/.test(body.pin)) throw new Error("bad PIN");
+    return body;
+  };
+  var exportKeys = async (p) => ({ priv: await subtle.exportKey("jwk", p.priv), sign: await subtle.exportKey("jwk", p.sign) });
+  var importKeys = async (p, jwks) => ({ ...p, priv: await subtle.importKey("jwk", jwks.priv, ECDH, true, ["deriveBits"]), sign: await subtle.importKey("jwk", jwks.sign, ECDSA, true, ["sign"]) });
+  var signBytes = async (signKey, bytes) => b64url(new Uint8Array(await subtle.sign({ name: "ECDSA", hash: "SHA-256" }, signKey, bytes)));
+  var verifyBytes = async (sigPub, signature, bytes) => {
+    const k = await subtle.importKey("raw", unb64url(sigPub), ECDSA, true, ["verify"]);
+    return subtle.verify({ name: "ECDSA", hash: "SHA-256" }, k, unb64url(signature), bytes);
+  };
+  var sourceHash = async (source) => Array.from(await sha256(utf8(source.replace(/\r\n/g, "\n")))).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  // src/crypto.js
+  var subtle2 = crypto.subtle;
+  var EC = { name: "ECDH", namedCurve: "P-256" };
+  var importPub = (pub) => subtle2.importKey("raw", unb64url(pub), EC, true, []);
+  var shared = async (priv, theirPub) => new Uint8Array(await subtle2.deriveBits({ name: "ECDH", public: await importPub(theirPub) }, priv, 256));
   var hkdfKey = async (ikm, salt, info) => {
-    const k = await subtle.importKey("raw", ikm, "HKDF", false, ["deriveKey"]);
-    return subtle.deriveKey(
+    const k = await subtle2.importKey("raw", ikm, "HKDF", false, ["deriveKey"]);
+    return subtle2.deriveKey(
       { name: "HKDF", hash: "SHA-256", salt, info: utf8(info) },
       k,
       { name: "AES-GCM", length: 256 },
@@ -218,10 +197,10 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       ["encrypt", "decrypt"]
     );
   };
-  var rawKey = (bytes) => subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  var rawKey = (bytes) => subtle2.importKey("raw", bytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
   var passKey = async (passphrase, salt, iterations = 6e5) => {
-    const k = await subtle.importKey("raw", utf8(passphrase), "PBKDF2", false, ["deriveKey"]);
-    return subtle.deriveKey(
+    const k = await subtle2.importKey("raw", utf8(passphrase), "PBKDF2", false, ["deriveKey"]);
+    return subtle2.deriveKey(
       { name: "PBKDF2", hash: "SHA-256", salt, iterations },
       k,
       { name: "AES-GCM", length: 256 },
@@ -231,13 +210,13 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
   };
   var seal = async (key, plaintextBytes) => {
     const nonce = random(12);
-    const ct = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, plaintextBytes));
+    const ct = new Uint8Array(await subtle2.encrypt({ name: "AES-GCM", iv: nonce }, key, plaintextBytes));
     return b64url(concat(nonce, ct));
   };
   var open = async (key, box) => {
     const all = unb64url(box);
     try {
-      return new Uint8Array(await subtle.decrypt({ name: "AES-GCM", iv: all.slice(0, 12) }, key, all.slice(12)));
+      return new Uint8Array(await subtle2.decrypt({ name: "AES-GCM", iv: all.slice(0, 12) }, key, all.slice(12)));
     } catch {
       throw new Error("cannot open: wrong key or tampered data");
     }
@@ -249,6 +228,7 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
     wrap: "ballast/wrap/1",
     spike: "ballast/spike/1",
     plate: "ballast/plate/1",
+    report: "ballast/report/1",
     item: (id) => `ballast/item/1/${id}`
   };
 
@@ -401,7 +381,7 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
 
   // src/tgbo.js
   var itemsHash = async (items) => hex(await sha256(utf8(items.map((i) => i.id + "\n" + i.box).join("\n"))));
-  var issueTGBO = async (test, rtc, trains, assets = {}, rtcName = "") => {
+  var issueTGBO = async (test, rtc, trains, assets = {}, rtcName = "", approval = null) => {
     const id = b64url(random(16)), saltBytes = random(16), salt = b64url(saltBytes);
     const K = random(32), Kkey = await rawKey(K);
     const items = [];
@@ -415,14 +395,14 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       const ik = await hkdfKey(K, saltBytes, INFO.item(it.id));
       items.push({ id: it.id, area: it.area || null, box: await sealJSON(ik, pub) });
     }
-    const wraps = [];
-    for (const t of trains) {
+    const clearances = [];
+    for (const [i, t] of trains.entries()) {
       const wk = await hkdfKey(await shared(rtc.priv, t.pub), saltBytes, INFO.wrap);
-      wraps.push({ sid: await sidOf(saltBytes, t.pin), box: await sealJSON(wk, { K: b64url(K) }) });
+      clearances.push({ no: i + 1, sid: await sidOf(saltBytes, t.pin), box: await sealJSON(wk, { K: b64url(K) }) });
     }
     const hash = await itemsHash(items);
-    const body = { v: 1, kind: "tgbo", id, salt, title: test.title, settings: test.settings, areas: test.areas, rtc: rtc.pub, rtcName, wraps, items, hash };
-    const text2 = await armor("TGBO", body, { title: test.title, rtc: rtcName, items: items.length, trains: trains.length, complete: hash.slice(0, 4).toUpperCase() });
+    const body = { v: 1, kind: "tgbo", id, salt, title: test.title, settings: test.settings, areas: test.areas, rtc: rtc.pub, rtcName, approval, clearances, items, hash };
+    const text2 = await armor("TGBO", body, { title: test.title, rtc: rtcName, items: items.length, clearances: trains.length, approved: approval ? "yes" : "no", complete: hash.slice(0, 4).toUpperCase() });
     return { text: text2, record: { id, salt, hash, key: b64url(K), title: test.title } };
   };
   var copyTGBO = async (text2, train, pin) => {
@@ -430,8 +410,8 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
     if (await itemsHash(body.items) !== body.hash) throw new Error("TGBO does not compare: items altered");
     const saltBytes = unb64url(body.salt);
     const sid = await sidOf(saltBytes, pin);
-    const wrap2 = body.wraps.find((w) => w.sid === sid);
-    if (!wrap2) throw new Error(`TGBO is not addressed to ${pin}`);
+    const wrap2 = body.clearances.find((w) => w.sid === sid);
+    if (!wrap2) throw new Error(`no clearance for CN ${pin} on this TGBO`);
     const wk = await hkdfKey(await shared(train.priv, body.rtc), saltBytes, INFO.wrap);
     const { K } = await openJSON(wk, wrap2.box);
     const Kb = unb64url(K);
@@ -446,6 +426,8 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       areas: body.areas,
       rtc: body.rtc,
       rtcName: body.rtcName || "",
+      approval: body.approval || null,
+      clearance: wrap2.no,
       sid,
       order,
       complete: body.hash.slice(0, 4).toUpperCase(),
@@ -501,6 +483,162 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
     const key = await hkdfKey(await shared(train.priv, body.rtc), unb64url(body.salt), INFO.plate);
     return openJSON(key, body.box);
   };
+
+  // src/score.js
+  var tagKey = (t) => t.includes(":") ? t : t;
+  var scoreAttempt = (test, attempt, marks = {}) => {
+    const answers = attempt.answers || {};
+    const perItem = test.items.map((it) => {
+      const a = answers[it.id];
+      let got = 0, pending = false;
+      if (it.type === "mc") got = a === it.key ? it.worth : 0;
+      else if (it.type === "match") got = it.pairs.reduce((n, p) => n + ((a || {})[p.id] === p.id ? 1 : 0), 0);
+      else if (it.type === "short") {
+        if (it.id in marks) got = Math.min(Number(marks[it.id]) || 0, it.worth);
+        else pending = true;
+      }
+      return { id: it.id, area: it.area || null, ref: it.ref, tags: it.tags, worth: it.worth, got, pending, answered: a !== void 0 && a !== "" };
+    });
+    const total = perItem.reduce((n, i) => n + i.worth, 0), score = perItem.reduce((n, i) => n + i.got, 0);
+    const roll = (keyOf) => {
+      const m = {};
+      for (const i of perItem) for (const k of [].concat(keyOf(i)).filter(Boolean)) {
+        m[k] ?? (m[k] = { correct: 0, total: 0 });
+        m[k].correct += i.got;
+        m[k].total += i.worth;
+      }
+      return m;
+    };
+    const areas = (test.areas.length ? test.areas : [...new Set(perItem.map((i) => i.area))].map((id) => ({ id, label: id }))).map((a) => ({ ...a, ...roll((i) => i.area)[a.id] || { correct: 0, total: 0 } }));
+    const refs = roll((i) => i.ref);
+    const read = Object.entries(refs).filter(([, v]) => v.correct < v.total).map(([ref, v]) => ({ ref, missed: v.total - v.correct, area: perItem.find((i) => i.ref.includes(ref))?.area || null })).sort((x, y) => y.missed - x.missed || x.ref.localeCompare(y.ref));
+    const grade = total ? score / total : 0;
+    return {
+      score,
+      total,
+      grade,
+      pass: grade >= (test.settings.pass ?? 0.9),
+      pending: perItem.filter((i) => i.pending).length,
+      areas,
+      tags: roll((i) => i.tags.map(tagKey)),
+      read,
+      perItem
+    };
+  };
+  var summarize = (test, scored) => {
+    const byItem = test.items.map((it) => {
+      const rows = scored.map((s) => s.perItem.find((i) => i.id === it.id));
+      const n = rows.length, fraction = rows.reduce((a, r) => a + r.got / it.worth, 0);
+      return { id: it.id, area: it.area || null, ref: it.ref, n, correct: rows.filter((r) => r.got === it.worth).length, difficulty: n ? 1 - fraction / n : 0 };
+    });
+    const byArea = test.areas.map((a) => {
+      const c = scored.map((s) => s.areas.find((x) => x.id === a.id)).filter(Boolean);
+      return { ...a, mean: c.length ? c.reduce((n, x) => n + (x.total ? x.correct / x.total : 0), 0) / c.length : 0 };
+    });
+    return {
+      n: scored.length,
+      passed: scored.filter((s) => s.pass).length,
+      mean: scored.length ? scored.reduce((n, s) => n + s.grade, 0) / scored.length : 0,
+      byItem: byItem.sort((x, y) => y.difficulty - x.difficulty),
+      byArea
+    };
+  };
+
+  // src/practice.js
+  var PRACTICE = `# Practice \xB7 CROR essentials
+time: 20m
+pass: 90%
+shuffle: items options
+back: yes
+areas: definitions "Definitions" \xB7 signals "Signals & Rule 27" \xB7 crossings "Crossings" \xB7 switches "Switches & derails" \xB7 authorities "Authorities"
+
+---
+id: p-speeds
+type: match
+area: definitions
+ref: CROR SPEEDS
+Q: Match each speed with its definition.
+L: Slow speed = A speed not exceeding 15 MPH.
+L: Reduced speed = A speed that will permit stopping within one half the range of vision of equipment.
+L: Restricted speed = Stopping within one half the range of vision of equipment, prepared to stop short of a switch not properly lined, not exceeding slow speed.
+L: Medium speed = A speed not exceeding 30 MPH.
+---
+id: p-27b
+type: mc
+area: signals
+ref: CROR 27(b)
+tags: imperfect-display
+svg: signal G,x,R
+Q: What is the indication of this signal?
+*a) Proceed, reducing to slow speed through turnouts when practicable, preparing to stop at the next signal.
+b) Clear signal.
+c) Stop signal.
+---
+id: p-27exc
+type: mc
+area: signals
+ref: CROR 27(b)
+tags: imperfect-display exception
+svg: signal x,Y
+Q: You are approaching this signal prepared to stop, after a Clear to Stop. How must it be regarded?
+a) As a Stop signal.
+*b) As Restricting.
+c) As the least restrictive indication.
+---
+id: p-14l
+type: mc
+area: crossings
+ref: CROR 14(l)
+Q: At 30 MPH, when must the whistle be sounded approaching a public crossing at grade?
+a) At the whistle post, \xBC mile from the crossing.
+*b) To provide 20 seconds warning before entering the crossing, prolonged or repeated until fully occupied.
+c) To provide 10 seconds warning.
+---
+id: p-19
+type: mc
+area: crossings
+ref: CROR 19
+Q: When must a train have ditch lights displayed in the direction of travel?
+a) Any time the headlight is displayed dimmed or full.
+*b) When the headlight is required to be displayed at full power.
+c) Only approaching public crossings at grade.
+---
+id: p-104
+type: mc
+area: switches
+ref: CROR 104(a)
+svg: switch reversed
+Q: After a hand operated switch has been turned, what must be done?
+*a) The points examined and the target, reflector or light observed to ensure the switch is properly lined for the route to be used.
+b) The points examined to ensure the switch is properly secured.
+c) Check for obstructions in the moving parts.
+---
+id: p-104-5
+type: mc
+area: switches
+ref: CROR 104.5
+Q: A movement approaching a derail set in the derailing position must stop at least how far before it?
+a) 10 feet
+*b) 25 feet
+c) 50 feet
+---
+id: p-564
+type: mc
+area: authorities
+ref: CROR 564(d)
+Q: Authorized under Rule 564 to pass Stop signal 246, the train:
+a) Must stop at the signal, then proceed at restricted speed.
+*b) Need not stop, must identify the signal by number, and proceeds at restricted speed to the next signal.
+c) Proceeds at track speed once the switch is lined.
+---
+id: p-302
+type: short
+area: authorities
+ref: CROR 302(b)
+svg: form clearance no=134 to="CN 5411" proceed="Sdg E Swt Aurora \u2192 Sdg W Swt Cantic" protect="Frmn Brown, Mile 33\u2013Borden" call="after leaving Borden" complete="0830" rtc="ABC"
+Q: Refer to the clearance. What must the conductor and locomotive engineer verify before it is acted upon?
+A: Each has a copy; the designation is correct; the engine number is verified visually.
+`;
 
   // src/app/attempt.js
   var initial = (order) => ({ order, at: 0, answers: {}, breaks: [], open: null, locked: null, started: null, finished: null, shown: {} });
@@ -711,35 +849,27 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
     return out;
   };
 
-  // src/app/train.js
-  var now = () => Date.now();
-  var identity = async () => await get("crew") || null;
-  var makeIdentity = async (name, pin) => {
-    const kp = await keypair(false);
-    const crew = { name, pin, pub: kp.pub, priv: kp.priv };
-    await set("crew", crew);
-    return crew;
-  };
-  var renderRegister = (root3, go3) => {
-    let photoBytes = null, stream = null;
-    const video = h("video", { autoplay: true, playsinline: true, style: { display: "none", width: "240px", borderRadius: "8px" } });
-    const preview = h("canvas", { width: 240, height: 240, style: { display: "none", borderRadius: "8px" } });
+  // src/app/profile-ui.js
+  var avatar = (p, size = 64) => p?.photo ? h("img", { src: "data:image/jpeg;base64," + p.photo, alt: p.name, width: size, height: size, class: "avatar" }) : h("div", { class: "avatar blank", style: { width: size + "px", height: size + "px", lineHeight: size + "px", fontSize: Math.round(size / 3) + "px" } }, (p?.name || "?").trim()[0]?.toUpperCase() || "?");
+  var toJpeg = (draw) => new Promise((res) => {
+    const c = h("canvas", { width: 240, height: 240 });
+    const x = c.getContext("2d");
+    x.fillStyle = "#ddd";
+    x.fillRect(0, 0, 240, 240);
+    draw(x);
+    c.toBlob(async (b) => res(btoa(String.fromCharCode(...new Uint8Array(await b.arrayBuffer())))), "image/jpeg", 0.8);
+  });
+  var renderRegister = (root4, role, label, done, { extractable = false } = {}) => {
+    let photo = "", stream = null;
+    const video = h("video", { autoplay: true, playsinline: true, muted: true, style: { display: "none", width: "240px", borderRadius: "8px" } });
+    const preview = h("div", { class: "row" });
     const status = h("p", { class: "status" });
     const stopCam = () => {
       stream?.getTracks().forEach((t) => t.stop());
       stream = null;
       video.style.display = "none";
     };
-    const usePhoto = (drawFn) => {
-      const c = preview.getContext("2d");
-      c.fillStyle = "#ddd";
-      c.fillRect(0, 0, 240, 240);
-      drawFn(c);
-      preview.style.display = "block";
-      preview.toBlob(async (b) => {
-        photoBytes = new Uint8Array(await b.arrayBuffer());
-      }, "image/png");
-    };
+    const show = () => mount(preview, photo ? h("img", { src: "data:image/jpeg;base64," + photo, width: 120, height: 120, class: "avatar" }) : null);
     const webcam = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 480 } });
@@ -749,85 +879,114 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
         status.textContent = "No camera available \u2014 upload a photo instead.";
       }
     };
-    const snap = () => {
+    const snap = async () => {
       if (!stream) return;
-      usePhoto((c) => {
-        const s = Math.min(video.videoWidth, video.videoHeight);
-        c.drawImage(video, (video.videoWidth - s) / 2, (video.videoHeight - s) / 2, s, s, 0, 0, 240, 240);
-      });
+      const s = Math.min(video.videoWidth, video.videoHeight);
+      photo = await toJpeg((c) => c.drawImage(video, (video.videoWidth - s) / 2, (video.videoHeight - s) / 2, s, s, 0, 0, 240, 240));
       stopCam();
+      show();
     };
     const upload = async (e) => {
       const f = e.target.files[0];
       if (!f) return;
       const bmp = await createImageBitmap(f);
       const s = Math.min(bmp.width, bmp.height);
-      usePhoto((c) => c.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, 240, 240));
+      photo = await toJpeg((c) => c.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, 240, 240));
+      show();
     };
     const name = h("input", { placeholder: "Name", required: true, autocomplete: "name" });
-    const pin = h("input", { placeholder: "PIN (engine number)", inputmode: "numeric", pattern: "\\d{4,8}", required: true });
+    const pin = h("input", { placeholder: "PIN", inputmode: "numeric", required: true });
     const submit = async (e) => {
       e.preventDefault();
-      if (!/^\d{4,8}$/.test(pin.value)) {
-        status.textContent = "PIN must be 4\u20138 digits.";
-        return;
+      try {
+        const p = await makeProfile(role, name.value, pin.value, photo, extractable);
+        stopCam();
+        done(p, await profileText(p));
+      } catch (err) {
+        status.textContent = err.message;
       }
-      const crew = await makeIdentity(name.value.trim(), pin.value.trim());
-      const text2 = await registerCrew(crew.name, crew.pin, crew.pub);
-      let png;
-      if (photoBytes) png = badgeWrite(photoBytes, text2);
-      else {
-        const c = h("canvas", { width: 240, height: 240 });
-        const x = c.getContext("2d");
-        x.fillStyle = "#334";
-        x.fillRect(0, 0, 240, 240);
-        x.fillStyle = "#fff";
-        x.font = "bold 28px Arial";
-        x.fillText(`CN ${crew.pin}`, 20, 120);
-        x.font = "16px Arial";
-        x.fillText(crew.name, 20, 160);
-        png = badgeWrite(new Uint8Array(await (await new Promise((r) => c.toBlob(r, "image/png"))).arrayBuffer()), text2);
-      }
-      download(`badge-CN${crew.pin}.png`, new Blob([png], { type: "image/png" }));
-      stopCam();
-      go3({ screen: "registered", crew, text: text2 });
     };
     mount(
-      root3,
-      h("h1", {}, "Register crew"),
-      h("p", {}, "Your browser makes a key it will keep. Your badge carries the public half to the RTC. Send the badge (or the text) to your instructor."),
+      root4,
+      h("h1", {}, `Register as ${label}`),
       h(
         "form",
         { onsubmit: submit, class: "card" },
         h("label", {}, "Name ", name),
-        h("label", {}, "PIN ", pin),
+        h("label", {}, "PIN (your employee number) ", pin),
         h("div", { class: "row" }, h("button", { type: "button", onclick: webcam }, "Use webcam"), h("button", { type: "button", onclick: snap }, "Take photo"), h("label", { class: "btn" }, "Upload photo", h("input", { type: "file", accept: "image/*", onchange: upload, style: { display: "none" } }))),
         video,
         preview,
         status,
-        h("button", { type: "submit", class: "primary" }, "Make my badge")
-      )
+        h("button", { type: "submit", class: "primary" }, "Register")
+      ),
+      h("p", { class: "small" }, "Your browser makes and keeps your keys. Your profile \u2014 name, PIN, photo, public keys \u2014 is a text file you send to the people who need it.")
     );
   };
-  var renderRegistered = (root3, { crew, text: text2 }, go3) => mount(
-    root3,
-    h("h1", {}, `CN ${crew.pin} \u2014 ${crew.name}`),
-    h("p", {}, "Badge downloaded. If attachments are blocked, paste this into your message instead:"),
-    h("textarea", { readonly: true, rows: 8, value: text2, onclick: (e) => e.target.select() }),
-    h("div", { class: "row" }, h("button", { onclick: () => navigator.clipboard?.writeText(text2) }, "Copy text"), h("button", { onclick: () => go3({ screen: "home" }) }, "Done"))
+  var profileCard = (p, text2, extra = []) => h(
+    "div",
+    { class: "card row" },
+    avatar(p, 72),
+    h("div", {}, h("b", {}, p.name), ` \xB7 ${p.role === "crew" ? "CN " : ""}${p.pin} \xB7 ${p.role}`, h(
+      "div",
+      { class: "row" },
+      text2 ? h("button", { onclick: () => download(`profile-${p.pin}.txt`, text2) }, "Download profile") : null,
+      text2 ? h("button", { onclick: () => navigator.clipboard?.writeText(text2) }, "Copy profile text") : null,
+      ...extra
+    ))
   );
-  var renderCopy = async (root3, { text: text2 }, go3) => {
-    const crew = await identity();
-    if (!crew) return mount(root3, h("h1", {}, "No crew registered"), h("p", {}, "Register first, then send your badge to the RTC and wait for a TGBO addressed to you."), h("button", { onclick: () => go3({ screen: "register" }) }, "Register"));
+
+  // src/app/crew.js
+  var now = () => Date.now();
+  var me = async () => await get("profile") || null;
+  var renderHome = async (root4, go4) => {
+    const p = await me();
+    const log = await get("crewlog") || {};
+    const step2 = (n, label, done, detail, action) => h("li", { class: done ? "done" : !p && n > 1 ? "later" : "next" }, h("b", {}, `${n}. ${label}`), detail ? h("div", { class: "small" }, detail) : null, action);
+    mount(
+      root4,
+      h("h1", {}, "Crew"),
+      p ? profileCard(p, await profileText(p)) : null,
+      h(
+        "ol",
+        { class: "steps" },
+        step2(1, "Register", !!p, p ? `${p.name}, CN ${p.pin}` : "Name, PIN, photo. Your browser keeps your keys.", p ? null : h("button", { class: "primary", onclick: () => go4({ screen: "register" }) }, "Register")),
+        step2(2, "Send your profile to the RTC", !!log.sent, "Download the profile text and attach it, or paste it into a message.", p && !log.sent ? h("button", { onclick: async () => {
+          await set("crewlog", { ...log, sent: now() });
+          go4({ screen: "home" });
+        } }, "I have sent it") : null),
+        step2(3, "Copy the TGBO the RTC sends you", !!log.copied, log.copied ? `${log.copied.title} at ${log.copied.when}` : "Drop or paste the TGBO below.", null),
+        step2(4, "Release", !!log.released, log.released ? `${log.released.title} at ${log.released.when}` : "Fullscreen, one item at a time, then Release track.", null),
+        step2(5, "Read your cancellation", !!log.cancelled, log.cancelled ? `${log.cancelled.grade}% on ${log.cancelled.title}` : "Drop the cancellation the RTC sends back to see your marks and what to read.", null)
+      ),
+      h("h2", {}, "Practice"),
+      h("p", { class: "small" }, "The same drill \u2014 repeat, fullscreen, one item at a time \u2014 on a built-in test that marks itself. Not for record."),
+      h("button", { onclick: () => go4({ screen: "practice" }) }, "Start practice")
+    );
+  };
+  var renderRegisterCrew = (root4, go4) => renderRegister(root4, "crew", "crew", async (p) => {
+    await set("profile", p);
+    go4({ screen: "registered" });
+  });
+  var renderRegistered = async (root4, go4) => {
+    const p = await me();
+    const t = await profileText(p);
+    mount(root4, h("h1", {}, "Registered"), profileCard(p, t), h("p", {}, "Send this to your RTC. If attachments are blocked, paste the text into the message."), h("textarea", { readonly: true, rows: 6, value: t }), h("button", { onclick: () => go4({ screen: "home" }) }, "Done"));
+  };
+  var clearanceSvg = (tgbo, p) => svgFor(`form clearance kind="Clearance" no=${tgbo.clearance} to="CN ${p.pin}" proceed="item 1 \u2192 item ${tgbo.order.length}" until="repeated back" call="before ${fmtTime(tgbo.settings.time)}" complete="${hhmm()}" rtc="${tgbo.rtcName || ""}"`);
+  var renderCopy = async (root4, { text: text2, practice }, go4) => {
+    const p = await me();
+    if (!p) return mount(root4, h("h1", {}, "Not registered"), h("p", {}, "Register first; a TGBO is addressed to your key."), h("button", { onclick: () => go4({ screen: "register" }) }, "Register"));
     let tgbo;
     try {
-      tgbo = await copyTGBO(text2, { priv: crew.priv, pub: crew.pub }, crew.pin);
+      tgbo = practice ? await practiceTGBO(p) : await copyTGBO(text2, p, p.pin);
     } catch (e) {
-      return mount(root3, h("h1", {}, "Cannot copy this TGBO"), h("p", { class: "bad" }, e.message), h("button", { onclick: () => go3({ screen: "home" }) }, "Back"));
+      return mount(root4, h("h1", {}, "Cannot copy this TGBO"), h("p", { class: "bad" }, e.message), h("button", { onclick: () => go4({ screen: "home" }) }, "Back"));
     }
-    const saved = await get("attempt:" + tgbo.id);
-    const repeat = h("input", { placeholder: "Repeat the four characters", maxlength: 4, autocomplete: "off", style: { textTransform: "uppercase" } });
+    const saved = practice ? null : await get("attempt:" + tgbo.id);
+    const repeat = h("input", { placeholder: "Repeat (4 characters)", maxlength: 4, autocomplete: "off", style: { textTransform: "uppercase", maxWidth: "240px" } });
     const status = h("p", { class: "status" });
+    const form2 = h("img", { src: "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(clearanceSvg(tgbo, p)))), style: { maxWidth: "100%" }, alt: "clearance" });
     const start = async (e) => {
       e.preventDefault();
       if (repeat.value.trim().toUpperCase() !== tgbo.complete) {
@@ -837,7 +996,7 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       try {
         await document.documentElement.requestFullscreen({ navigationUI: "hide" });
       } catch {
-        status.textContent = "Fullscreen is required for this test.";
+        status.textContent = "Fullscreen is required.";
         return;
       }
       try {
@@ -845,16 +1004,19 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       } catch {
       }
       const events = saved?.events?.length ? saved.events : [[now(), "copy", tgbo.complete]];
-      go3({ screen: "work", tgbo, crew, events });
+      if (!practice) await set("crewlog", { ...await get("crewlog") || {}, copied: { title: tgbo.title, when: hhmm() } });
+      go4({ screen: "work", tgbo, p, events, practice });
     };
     mount(
-      root3,
+      root4,
       h("h1", {}, tgbo.title),
+      tgbo.approval ? h("p", { class: "small good" }, `Approved by ${tgbo.approval.name}`) : null,
       h(
         "div",
         { class: "card" },
-        h("p", {}, `TGBO addressed to CN ${crew.pin}. ${tgbo.order.length} items \xB7 ${fmtTime(tgbo.settings.time)} \xB7 pass mark ${Math.round(tgbo.settings.pass * 100)}%.`),
-        h("p", {}, "Rule 136. Copy as transmitted, then repeat back:"),
+        form2,
+        h("p", {}, `Clearance No. ${tgbo.clearance} to CN ${p.pin} \xB7 ${tgbo.order.length} items \xB7 ${fmtTime(tgbo.settings.time)} \xB7 pass ${Math.round(tgbo.settings.pass * 100)}%`),
+        h("p", {}, "Rule 136 \u2014 copy as transmitted, then repeat back:"),
         h("p", { class: "complete" }, `Complete ${hhmm()} \xB7 RTC ${tgbo.rtcName || ""} \xB7 `, h("b", {}, tgbo.complete)),
         saved?.events?.length ? h("p", { class: "status" }, `An attempt in progress was found (${Object.keys(fold(tgbo.order, saved.events).answers).length} answered). It will resume.`) : null,
         h("form", { onsubmit: start, class: "row" }, repeat, h("button", { type: "submit", class: "primary" }, "Repeat and enter fullscreen")),
@@ -863,19 +1025,42 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       )
     );
   };
-  var renderWork = async (root3, { tgbo, crew, events }, go3) => {
+  var practiceTGBO = async (p) => {
+    const { test } = await parseTest(PRACTICE);
+    const sid = "practice:" + p.pin;
+    const order = shuffled(test.items.map((i) => i.id), sid);
+    return {
+      id: "practice",
+      title: test.title + " (practice)",
+      settings: test.settings,
+      areas: test.areas,
+      rtcName: "BALLAST",
+      clearance: 0,
+      sid,
+      order,
+      complete: "PRAC",
+      test,
+      item: async (id) => {
+        const it = publicItem(test.items.find((i) => i.id === id));
+        if (test.settings.shuffleOptions && it.options.length) it.options = shuffled(it.options, sid + id);
+        if (it.pairs.length) it.rights = shuffled(it.pairs.map((x) => ({ id: x.id, text: x.right })), sid + id + "r");
+        return it;
+      }
+    };
+  };
+  var renderWork = async (root4, { tgbo, p, events, practice }, go4) => {
     forget();
     const log = (kind, a, b) => {
       events.push([now(), kind, a, b]);
-      set("attempt:" + tgbo.id, { events });
+      if (!practice) set("attempt:" + tgbo.id, { events });
     };
     const state = () => fold(tgbo.order, events);
-    const canvas = h("canvas", { width: 900, height: 700, tabindex: 0 });
+    const canvas = h("canvas", { width: 900, height: 360, tabindex: 0 });
     const timer = h("span", { class: "timer" });
     const status = h("p", { class: "status" });
-    const answerBox = h("textarea", { rows: 4, placeholder: "Your answer (short answer item)", style: { display: "none" } });
+    const answerBox = h("textarea", { rows: 4, placeholder: "Your answer", style: { display: "none" } });
     let item = null, hits = [], pick = null, images = [];
-    const watermark = `CN ${crew.pin} ${crew.name} ${hhmm()}`;
+    const watermark = `CN ${p.pin} ${p.name} ${hhmm()}`;
     const deadline = () => (state().started || now()) + tgbo.settings.time * 1e3;
     const tick = () => {
       const left = Math.max(0, Math.ceil((deadline() - now()) / 1e3));
@@ -885,11 +1070,9 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
     const iv = setInterval(tick, 500);
     const draw = () => {
       const s = state();
-      const r = drawItem(canvas, item, { answer: s.answers[item.id], pick, images, watermark, index: s.at, count: tgbo.order.length });
-      hits = r.hits;
-      canvas.height = Math.max(360, r.height);
-      const r2 = drawItem(canvas, item, { answer: s.answers[item.id], pick, images, watermark, index: s.at, count: tgbo.order.length });
-      hits = r2.hits;
+      const opts = { answer: s.answers[item.id], pick, images, watermark, index: s.at, count: tgbo.order.length };
+      canvas.height = Math.max(360, drawItem(canvas, item, opts).height);
+      hits = drawItem(canvas, item, opts).hits;
       canvas.dataset.hits = JSON.stringify(hits.map(({ x, y, w, h: hh, kind, id }) => ({ x, y, w, h: hh, kind, id: typeof id === "string" ? id : "img" })));
       answerBox.style.display = item.type === "short" ? "block" : "none";
       if (item.type === "short") answerBox.value = s.answers[item.id] || "";
@@ -904,7 +1087,7 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       canvas.focus();
     };
     const click = (e) => {
-      const rect = canvas.getBoundingClientRect(), x = (e.clientX - rect.left) * (canvas.width / rect.width), y = (e.clientY - rect.top) * (canvas.height / rect.height);
+      const r = canvas.getBoundingClientRect(), x = (e.clientX - r.left) * (canvas.width / r.width), y = (e.clientY - r.top) * (canvas.height / r.height);
       const hit = hits.find((t) => x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h);
       if (!hit) return;
       if (hit.kind === "option") log("answer", item.id, hit.id);
@@ -912,17 +1095,16 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       else if (hit.kind === "right" && pick) {
         log("answer", item.id, { ...state().answers[item.id] || {}, [pick]: hit.id });
         pick = null;
-      } else if (hit.kind === "zoom") return zoom(hit.id);
+      } else if (hit.kind === "zoom") {
+        const ov = h("div", { class: "overlay", onclick: () => ov.remove() });
+        const c = h("canvas", { width: hit.id.width, height: hit.id.height });
+        c.getContext("2d").drawImage(hit.id, 0, 0);
+        ov.append(c);
+        document.body.append(ov);
+        return;
+      }
       draw();
     };
-    const zoom = (bmp) => {
-      const ov = h("div", { class: "overlay", onclick: () => ov.remove() });
-      const c = h("canvas", { width: bmp.width, height: bmp.height });
-      c.getContext("2d").drawImage(bmp, 0, 0);
-      ov.append(c);
-      document.body.append(ov);
-    };
-    const typed = () => log("answer", item.id, answerBox.value);
     const next = () => {
       const s = state();
       if (s.at < tgbo.order.length - 1) show(s.at + 1);
@@ -932,6 +1114,7 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       const s = state();
       if (tgbo.settings.allowBack && s.at > 0) show(s.at - 1);
     };
+    const guard = h("div", { class: "guard", style: { display: "none" } });
     const onBreak = (why) => {
       if (state().finished || state().open) return;
       log("break", why);
@@ -949,7 +1132,6 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       guard.style.display = "none";
       canvas.focus();
     };
-    const guard = h("div", { class: "guard", style: { display: "none" } });
     const onVis = () => {
       if (document.hidden) onBreak("tab-hidden");
     };
@@ -966,16 +1148,19 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && ["c", "x", "a", "s", "p", "u"].includes(k)) refuse(e);
       if (e.key === "PrintScreen") refuse(e);
-      if (e.key === "ArrowRight" && document.activeElement === canvas) next();
-      if (e.key === "ArrowLeft" && document.activeElement === canvas) prev();
+      if (document.activeElement === canvas) {
+        if (e.key === "ArrowRight") next();
+        if (e.key === "ArrowLeft") prev();
+      }
     };
+    const onPrint = () => onBreak("print");
     const arm = () => {
       document.addEventListener("visibilitychange", onVis);
       document.addEventListener("fullscreenchange", onFs);
       window.addEventListener("blur", onBlur);
       for (const ev of ["copy", "cut", "contextmenu", "dragstart"]) document.addEventListener(ev, refuse);
       document.addEventListener("keydown", keys);
-      window.addEventListener("beforeprint", () => onBreak("print"));
+      window.addEventListener("beforeprint", onPrint);
     };
     const disarm = () => {
       document.removeEventListener("visibilitychange", onVis);
@@ -983,6 +1168,7 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       window.removeEventListener("blur", onBlur);
       for (const ev of ["copy", "cut", "contextmenu", "dragstart"]) document.removeEventListener(ev, refuse);
       document.removeEventListener("keydown", keys);
+      window.removeEventListener("beforeprint", onPrint);
       clearInterval(iv);
     };
     const submit = async (why) => {
@@ -996,144 +1182,110 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       disarm();
       forget();
       const attempt = toRelease(tgbo.order, events);
-      const text2 = await giveRelease(tgbo, { priv: crew.priv, pub: crew.pub }, crew.pin, attempt);
-      await del("attempt:" + tgbo.id);
       try {
         navigator.keyboard?.unlock?.();
         await document.exitFullscreen();
       } catch {
       }
-      go3({ screen: "released", tgbo, text: text2, why });
+      if (practice) {
+        const r = scoreAttempt(tgbo.test, attempt, {});
+        return go4({ screen: "marks", result: { ...r, title: tgbo.title, pin: p.pin }, practice: true });
+      }
+      const text2 = await giveRelease(tgbo, p, p.pin, attempt);
+      await del("attempt:" + tgbo.id);
+      await set("crewlog", { ...await get("crewlog") || {}, released: { title: tgbo.title, when: hhmm() } });
+      go4({ screen: "released", tgbo, text: text2, why });
     };
     mount(
-      root3,
-      h("div", { class: "bar" }, h("span", {}, tgbo.title), timer, h("span", {}, `CN ${crew.pin}`)),
-      h(
-        "div",
-        { class: "work" },
-        canvas,
-        answerBox,
-        h("div", { class: "row" }, tgbo.settings.allowBack ? h("button", { onclick: prev }, "\u2190 Back") : null, h("button", { onclick: next }, "Next \u2192"), h("button", { class: "primary", onclick: () => submit("done") }, "Release track"), status)
-      ),
+      root4,
+      h("div", { class: "bar" }, h("span", {}, tgbo.title), timer, h("span", { class: "row" }, avatar(p, 28), ` CN ${p.pin}`)),
+      h("div", { class: "work" }, canvas, answerBox, h("div", { class: "row" }, tgbo.settings.allowBack ? h("button", { onclick: prev }, "\u2190 Back") : null, h("button", { onclick: next }, "Next \u2192"), h("button", { class: "primary", onclick: () => submit("done") }, "Release track"), status)),
       guard
     );
     canvas.addEventListener("click", click);
-    answerBox.addEventListener("input", typed);
+    answerBox.addEventListener("input", () => log("answer", item.id, answerBox.value));
     arm();
     tick();
     if (!navigator.keyboard?.lock) log("note", "keyboard-lock-unavailable");
     await show(state().at);
   };
-  var renderReleased = (root3, { tgbo, text: text2, why }, go3) => mount(
-    root3,
+  var renderReleased = (root4, { tgbo, text: text2, why }, go4) => mount(
+    root4,
     h("h1", {}, "Track released"),
     h("p", {}, why === "time" ? "Time expired; the attempt was released as it stood." : "Your attempt is sealed to the RTC. Send this file \u2014 or paste the text \u2014 to your instructor."),
-    h("div", { class: "row" }, h("button", { class: "primary", onclick: () => download(`release-${tgbo.title.replace(/\W+/g, "-")}.spike`, text2) }, "Download release"), h("button", { onclick: () => navigator.clipboard?.writeText(text2) }, "Copy text")),
+    h("div", { class: "row" }, h("button", { class: "primary", onclick: () => download(`release-${tgbo.title.replace(/\W+/g, "-")}.txt`, text2) }, "Download release"), h("button", { onclick: () => navigator.clipboard?.writeText(text2) }, "Copy text")),
     h("textarea", { readonly: true, rows: 6, value: text2 }),
-    h("button", { onclick: () => go3({ screen: "home" }) }, "Done")
+    h("button", { onclick: () => go4({ screen: "home" }) }, "Done")
   );
-  var renderCancel = async (root3, { text: text2 }, go3) => {
-    const crew = await identity();
-    if (!crew) return mount(root3, h("p", { class: "bad" }, "No crew key in this browser; this cancellation was sealed to your key."));
-    let r;
+  var renderCancel = async (root4, { text: text2 }, go4) => {
+    const p = await me();
+    if (!p) return mount(root4, h("p", { class: "bad" }, "No crew key in this browser; this cancellation was sealed to your key."));
     try {
-      r = await readCancel(text2, { priv: crew.priv, pub: crew.pub });
+      const r = await readCancel(text2, p);
+      await set("crewlog", { ...await get("crewlog") || {}, cancelled: { title: r.title, grade: Math.round(r.grade * 100) } });
+      return renderMarks(root4, { result: r }, go4);
     } catch (e) {
-      return mount(root3, h("h1", {}, "Cannot open"), h("p", { class: "bad" }, e.message), h("button", { onclick: () => go3({ screen: "home" }) }, "Back"));
+      mount(root4, h("h1", {}, "Cannot open"), h("p", { class: "bad" }, e.message), h("button", { onclick: () => go4({ screen: "home" }) }, "Back"));
     }
+  };
+  var renderMarks = (root4, { result: r, practice }, go4) => {
     const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
     mount(
-      root3,
+      root4,
       h("h1", {}, r.title),
+      practice ? h("p", { class: "small" }, "Practice \u2014 not for record.") : null,
       h("p", { class: r.pass ? "good big" : "bad big" }, `${Math.round(r.grade * 100)}% \u2014 ${r.pass ? "PASS" : "did not pass"}`, r.pending ? ` (${r.pending} short answers not yet marked)` : ""),
       h("h2", {}, "By area"),
       h("table", {}, r.areas.map((a) => h("tr", {}, h("td", {}, a.label), h("td", {}, `${a.correct}/${a.total}`), h("td", {}, h("div", { class: "meter" }, h("div", { style: { width: pct(a.correct, a.total) + "%" } })))))),
       h("h2", {}, "Read these"),
       r.read.length ? h("ul", {}, r.read.map((x) => h("li", {}, h("b", {}, x.ref), x.area ? ` \xB7 ${x.area}` : "", ` \xB7 missed ${x.missed}`))) : h("p", {}, "Nothing \u2014 every rule tested was answered correctly."),
-      h("button", { onclick: () => go3({ screen: "home" }) }, "Done")
+      h("button", { onclick: () => go4({ screen: "home" }) }, "Done")
     );
   };
 
-  // src/score.js
-  var tagKey = (t) => t.includes(":") ? t : t;
-  var scoreAttempt = (test, attempt, marks = {}) => {
-    const answers = attempt.answers || {};
-    const perItem = test.items.map((it) => {
-      const a = answers[it.id];
-      let got = 0, pending = false;
-      if (it.type === "mc") got = a === it.key ? it.worth : 0;
-      else if (it.type === "match") got = it.pairs.reduce((n, p) => n + ((a || {})[p.id] === p.id ? 1 : 0), 0);
-      else if (it.type === "short") {
-        if (it.id in marks) got = Math.min(Number(marks[it.id]) || 0, it.worth);
-        else pending = true;
-      }
-      return { id: it.id, area: it.area || null, ref: it.ref, tags: it.tags, worth: it.worth, got, pending, answered: a !== void 0 && a !== "" };
-    });
-    const total = perItem.reduce((n, i) => n + i.worth, 0), score = perItem.reduce((n, i) => n + i.got, 0);
-    const roll = (keyOf) => {
-      const m = {};
-      for (const i of perItem) for (const k of [].concat(keyOf(i)).filter(Boolean)) {
-        m[k] ?? (m[k] = { correct: 0, total: 0 });
-        m[k].correct += i.got;
-        m[k].total += i.worth;
-      }
-      return m;
-    };
-    const areas = (test.areas.length ? test.areas : [...new Set(perItem.map((i) => i.area))].map((id) => ({ id, label: id }))).map((a) => ({ ...a, ...roll((i) => i.area)[a.id] || { correct: 0, total: 0 } }));
-    const refs = roll((i) => i.ref);
-    const read = Object.entries(refs).filter(([, v]) => v.correct < v.total).map(([ref, v]) => ({ ref, missed: v.total - v.correct, area: perItem.find((i) => i.ref.includes(ref))?.area || null })).sort((x, y) => y.missed - x.missed || x.ref.localeCompare(y.ref));
-    const grade = total ? score / total : 0;
-    return {
-      score,
-      total,
-      grade,
-      pass: grade >= (test.settings.pass ?? 0.9),
-      pending: perItem.filter((i) => i.pending).length,
-      areas,
-      tags: roll((i) => i.tags.map(tagKey)),
-      read,
-      perItem
-    };
-  };
-  var summarize = (test, scored) => {
-    const byItem = test.items.map((it) => {
-      const rows = scored.map((s) => s.perItem.find((i) => i.id === it.id));
-      const n = rows.length, fraction = rows.reduce((a, r) => a + r.got / it.worth, 0);
-      return { id: it.id, area: it.area || null, ref: it.ref, n, correct: rows.filter((r) => r.got === it.worth).length, difficulty: n ? 1 - fraction / n : 0 };
-    });
-    const byArea = test.areas.map((a) => {
-      const c = scored.map((s) => s.areas.find((x) => x.id === a.id)).filter(Boolean);
-      return { ...a, mean: c.length ? c.reduce((n, x) => n + (x.total ? x.correct / x.total : 0), 0) / c.length : 0 };
-    });
-    return {
-      n: scored.length,
-      passed: scored.filter((s) => s.pass).length,
-      mean: scored.length ? scored.reduce((n, s) => n + s.grade, 0) / scored.length : 0,
-      byItem: byItem.sort((x, y) => y.difficulty - x.difficulty),
-      byArea
-    };
-  };
-
   // src/sheet.js
-  var newSheet = async (name) => {
-    const kp = await keypair(true);
-    return { rtc: { name, pub: kp.pub, priv: kp.priv }, trains: [], tgbos: [], releases: [], marks: {} };
-  };
-  var saveSheet = async (sheet2, passphrase) => {
+  var newSheet = async (profile) => ({ rtc: profile, trains: [], tgbos: [], releases: [], marks: {}, approvals: [], reports: [], sources: [] });
+  var newBook = newSheet;
+  var saveSheet = async (sheet2, passphrase, kind = "SHEET") => {
     const salt = random(16), iter = 6e5;
     const key = await passKey(passphrase, salt, iter);
-    const plain = { ...sheet2, rtc: { name: sheet2.rtc.name, pub: sheet2.rtc.pub, priv: await exportPriv(sheet2.rtc.priv) } };
-    const body = { v: 1, kind: "sheet", kdf: { salt: b64url(salt), iter }, box: await sealJSON(key, plain) };
-    return armor("SHEET", body, { rtc: sheet2.rtc.name, trains: sheet2.trains.length, tgbos: sheet2.tgbos.length });
+    const { priv, sign, ...pub } = sheet2.rtc;
+    const plain = { ...sheet2, rtc: { ...pub, keys: await exportKeys(sheet2.rtc) } };
+    const body = { v: 1, kind: kind.toLowerCase(), kdf: { salt: b64url(salt), iter }, box: await sealJSON(key, plain) };
+    return armor(kind, body, { name: sheet2.rtc.name, role: sheet2.rtc.role, trains: sheet2.trains.length, tgbos: sheet2.tgbos.length });
   };
-  var openSheet = async (text2, passphrase) => {
-    const { body } = await dearmor(text2, "SHEET");
+  var saveBook = (book2, passphrase) => saveSheet(book2, passphrase, "BOOK");
+  var openSheet = async (text2, passphrase, kind = "SHEET") => {
+    const { body } = await dearmor(text2, kind);
     const key = await passKey(passphrase, unb64url(body.kdf.salt), body.kdf.iter);
     const plain = await openJSON(key, body.box).catch(() => {
       throw new Error("wrong passphrase");
     });
-    plain.rtc.priv = await importPriv(plain.rtc.priv, true);
+    const { keys, ...p } = plain.rtc;
+    plain.rtc = await importKeys(p, keys);
     return plain;
+  };
+  var openBook = (text2, passphrase) => openSheet(text2, passphrase, "BOOK");
+
+  // src/director.js
+  var approveSource = async (director, source, title) => {
+    const hash = await sourceHash(source);
+    const signature = await signBytes(director.sign, utf8(`ballast/approval/1
+${hash}`));
+    return armor("APPROVAL", { v: 1, kind: "approval", hash, title, by: director.sig, name: director.name, signature }, { title, hash: hash.slice(0, 12), by: director.name });
+  };
+  var readApproval = async (text2) => (await dearmor(text2, "APPROVAL")).body;
+  var checkApproval = async (approval, source) => await sourceHash(source) === approval.hash && verifyBytes(approval.by, approval.signature, utf8(`ballast/approval/1
+${approval.hash}`));
+  var sendReport = async (teacher, directorPub, report) => {
+    const salt = unb64url(report.tgbo);
+    const key = await hkdfKey(await shared(teacher.priv, directorPub), salt, INFO.report);
+    return armor("REPORT", { v: 1, kind: "report", tgbo: report.tgbo, teacher: teacher.pub, box: await sealJSON(key, report) }, { title: report.title, teacher: teacher.name, trains: report.rows.length });
+  };
+  var takeReport = async (text2, director) => {
+    const { body } = await dearmor(text2, "REPORT");
+    const key = await hkdfKey(await shared(director.priv, body.teacher), unb64url(body.tgbo), INFO.report);
+    return { teacher: body.teacher, report: await openJSON(key, body.box) };
   };
 
   // src/app/rtc.js
@@ -1141,10 +1293,14 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
   var tab = "trains";
   var pass = "";
   var notes = [];
+  var view = null;
+  var root;
+  var go;
   var note = (m, bad = false) => {
-    notes.unshift({ m, bad, t: Date.now() });
+    notes.unshift({ m, bad });
     notes = notes.slice(0, 6);
   };
+  var rerender = () => render(root, {}, go);
   var intake = async (items) => {
     for (const it of items) {
       try {
@@ -1154,128 +1310,141 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
         }
         if (it.asset) {
           const bytes = await readFileBytes(it.asset);
-          (sheet.assets ?? (sheet.assets = {}))[it.name] = { mime: it.asset.type || "image/jpeg", b64: b64(bytes) };
+          sheet.assets[it.name] = { mime: it.asset.type || "image/jpeg", b64: b64(bytes) };
           note(`asset ${it.name} (${Math.round(bytes.length / 1024)} KB)`);
           continue;
         }
         if (it.source) {
           const { test, errors } = await parseTest(it.text);
-          if (errors.length) {
-            note(`${it.name}: ${errors.length} problem(s) \u2014 ${errors[0]}`, true);
-            sheet.draft = { name: it.name, source: it.text, errors };
-          } else {
-            sheet.draft = { name: it.name, source: it.text, test, errors: [] };
-            note(`test source ${it.name}: ${test.items.length} items`);
-          }
+          sheet.draft = { name: it.name, source: it.text, test: errors.length ? null : test, errors };
+          note(errors.length ? `${it.name}: ${errors.length} problem(s) \u2014 ${errors[0]}` : `test source ${it.name}: ${test.items.length} items`, !!errors.length);
           tab = "tests";
           continue;
         }
         const kind = sniff(it.text);
-        if (kind === "CREW") {
-          const c = await readCrew(it.text);
-          const i = sheet.trains.findIndex((t) => t.pin === c.pin);
-          if (i >= 0 && sheet.trains[i].pub !== c.pub) note(`CN ${c.pin} re-registered with a new key (${c.name}); replaced`, true);
-          if (i >= 0) sheet.trains[i] = c;
-          else sheet.trains.push(c);
-          note(`crew CN ${c.pin} ${c.name}`);
+        if (kind === "PROFILE") {
+          const p = await readProfile(it.text);
+          if (p.role === "superintendent") {
+            sheet.superintendent = p;
+            note(`superintendent ${p.name} on the desk`);
+            continue;
+          }
+          if (p.role !== "crew") {
+            note(`${p.name} is an ${p.role}, not crew`, true);
+            continue;
+          }
+          const i = sheet.trains.findIndex((t) => t.pin === p.pin);
+          if (i >= 0 && sheet.trains[i].pub !== p.pub) note(`CN ${p.pin} re-registered with a new key (${p.name}); replaced`, true);
+          if (i >= 0) sheet.trains[i] = p;
+          else sheet.trains.push(p);
+          note(`crew CN ${p.pin} ${p.name}`);
           tab = "trains";
+        } else if (kind === "APPROVAL") {
+          const a = await readApproval(it.text);
+          sheet.approvals = sheet.approvals.filter((x) => x.hash !== a.hash);
+          sheet.approvals.push(a);
+          note(`approval for "${a.title}" by ${a.name}`);
+          tab = "tests";
         } else if (kind === "RELEASE") {
           const { body } = await dearmor(it.text);
           const rec = sheet.tgbos.find((t) => t.id === body.tgbo);
           if (!rec) throw new Error("release is for a TGBO not on this sheet");
           const r = await takeRelease(it.text, sheet.rtc, rec);
           const onSheet = sheet.trains.find((t) => t.pin === r.pin);
-          const identity2 = onSheet && onSheet.pub === r.train ? "ok" : "KEY MISMATCH";
+          const identity = onSheet && onSheet.pub === r.train ? "ok" : "KEY MISMATCH";
           sheet.releases = sheet.releases.filter((x) => !(x.tgbo === rec.id && x.pin === r.pin));
-          sheet.releases.push({ tgbo: rec.id, pin: r.pin, train: r.train, identity: identity2, attempt: r.attempt, name: onSheet?.name || "?" });
-          note(`release CN ${r.pin} for ${rec.title}${identity2 !== "ok" ? " \u2014 KEY MISMATCH" : ""}`, identity2 !== "ok");
+          sheet.releases.push({ tgbo: rec.id, pin: r.pin, train: r.train, identity, attempt: r.attempt, name: onSheet?.name || "?" });
+          note(`release CN ${r.pin} for ${rec.title}${identity !== "ok" ? " \u2014 KEY MISMATCH" : ""}`, identity !== "ok");
           tab = "releases";
-        } else if (kind === "SHEET") note("a sheet is already open; use the home page to open another", true);
-        else if (kind === "TGBO") note("that is a TGBO you issued; the RTC does not copy TGBOs", true);
+        } else if (kind) note(`${it.name}: a ${kind} does not belong on the desk`, true);
         else note(`${it.name}: not recognised`, true);
       } catch (e) {
         note(`${it.name}: ${e.message}`, true);
       }
     }
   };
+  var takeFiles = async (files) => {
+    const items = [];
+    for (const f of files) {
+      if (/\.(png|jpe?g|gif|webp)$/i.test(f.name)) items.push({ name: f.name, asset: f });
+      else {
+        const text2 = await readFileText(f);
+        items.push(sniff(text2) ? { name: f.name, text: text2 } : { name: f.name, text: text2, source: true });
+      }
+    }
+    await intake(items);
+    rerender();
+  };
   var trainsTab = () => h(
     "div",
     {},
-    h("p", { class: "small" }, "Drop badges (PNG) or pasted CREW text on the desk. Each train appears once per PIN; a new key for a known PIN replaces the old one and is noted."),
-    h(
-      "table",
-      {},
-      h("tr", {}, h("th", {}, "PIN"), h("th", {}, "Name"), h("th", {}, "Key")),
-      sheet.trains.sort((a, b) => a.pin.localeCompare(b.pin)).map((t) => h("tr", {}, h("td", {}, `CN ${t.pin}`), h("td", {}, t.name), h("td", { class: "small" }, t.pub.slice(0, 12) + "\u2026", " ", h("button", { onclick: () => {
-        sheet.trains = sheet.trains.filter((x) => x !== t);
-        rerender();
-      } }, "remove"))))
-    ),
+    h("p", { class: "small" }, "Drop crew profiles on the desk. One row per PIN; a new key for a known PIN replaces the old one and is noted."),
+    h("table", {}, sheet.trains.sort((a, b) => a.pin.localeCompare(b.pin)).map((t) => h("tr", {}, h("td", {}, avatar(t, 48)), h("td", {}, `CN ${t.pin}`), h("td", {}, t.name), h("td", { class: "small" }, t.pub.slice(0, 12) + "\u2026"), h("td", {}, h("button", { onclick: () => {
+      sheet.trains = sheet.trains.filter((x) => x !== t);
+      rerender();
+    } }, "remove"))))),
     sheet.trains.length ? null : h("p", { class: "status" }, "No trains yet.")
   );
+  var approvalFor = async (source) => {
+    for (const a of sheet.approvals) if (await checkApproval(a, source)) return a;
+    return null;
+  };
   var testsTab = () => {
     const d = sheet.draft;
     const issue = async () => {
       if (!d?.test) return;
-      const missing = d.test.items.flatMap((i) => i.img.map((im) => im.name)).filter((n) => !(sheet.assets || {})[n]);
-      if (missing.length) return note(`missing assets: ${[...new Set(missing)].join(", ")} \u2014 drop them on the desk`, true), rerender();
+      const missing = [...new Set(d.test.items.flatMap((i) => i.img.map((im) => im.name)).filter((n) => !sheet.assets[n]))];
+      if (missing.length) return note(`missing assets: ${missing.join(", ")} \u2014 drop them on the desk`, true), rerender();
       if (!sheet.trains.length) return note("no trains on the sheet", true), rerender();
-      const { text: text2, record } = await issueTGBO(d.test, sheet.rtc, sheet.trains, sheet.assets || {}, sheet.rtc.name);
-      record.source = d.source;
-      record.tgbo = text2;
-      record.issued = Date.now();
-      record.trains = sheet.trains.map((t) => t.pin);
+      const approval = await approvalFor(d.source);
+      const { text: text2, record } = await issueTGBO(d.test, sheet.rtc, sheet.trains, sheet.assets, sheet.rtc.name, approval);
+      Object.assign(record, { source: d.source, tgbo: text2, issued: Date.now(), trains: sheet.trains.map((t) => t.pin), approved: !!approval });
       sheet.tgbos.push(record);
-      download(`${d.test.title.replace(/\W+/g, "-")}.tie`, text2);
+      download(`${d.test.title.replace(/\W+/g, "-")}.tgbo.txt`, text2);
       note(`issued ${record.title} to ${sheet.trains.length} train(s) \u2014 complete ${record.hash.slice(0, 4).toUpperCase()}`);
       rerender();
     };
+    const approvedMark = h("span", { class: "small" });
+    if (d?.test) approvalFor(d.source).then((a) => {
+      approvedMark.textContent = a ? ` \xB7 approved by ${a.name}` : " \xB7 not approved";
+      approvedMark.className = a ? "small good" : "small bad";
+    });
     return h(
       "div",
       {},
-      h("p", { class: "small" }, "Drop a test source (.txt) and any images it names. Issue writes one TGBO for every train on the sheet."),
+      h("p", { class: "small" }, "Drop a test source (.txt), any images it names, and the superintendent's approval if you have one. Issue writes one TGBO with a clearance for every train on the sheet."),
       d ? h(
         "div",
         { class: "card" },
         h("b", {}, d.name),
-        d.errors.length ? h("ul", { class: "bad" }, d.errors.map((e) => h("li", {}, e))) : h("p", {}, `${d.test.title} \xB7 ${d.test.items.length} items \xB7 ${fmtTime(d.test.settings.time)} \xB7 pass ${Math.round(d.test.settings.pass * 100)}% \xB7 areas: ${d.test.areas.map((a) => a.id).join(", ") || "none"}`),
+        d.errors.length ? h("ul", { class: "bad" }, d.errors.map((e) => h("li", {}, e))) : h("p", {}, `${d.test.title} \xB7 ${d.test.items.length} items \xB7 ${fmtTime(d.test.settings.time)} \xB7 pass ${Math.round(d.test.settings.pass * 100)}% \xB7 areas: ${d.test.areas.map((a) => a.id).join(", ") || "none"}`, approvedMark),
         d.errors.length ? null : h("button", { class: "primary", onclick: issue }, `Issue TGBO to ${sheet.trains.length} train(s)`)
       ) : h("p", { class: "status" }, "No test source loaded."),
       h("h2", {}, "Issued"),
-      h("table", {}, sheet.tgbos.map((t) => h("tr", {}, h("td", {}, t.title), h("td", { class: "small" }, new Date(t.issued).toLocaleString()), h("td", {}, `${t.trains?.length ?? "?"} trains`), h("td", { class: "complete small" }, t.hash.slice(0, 4).toUpperCase()), h("td", {}, h("button", { onclick: () => download(`${t.title.replace(/\W+/g, "-")}.tie`, t.tgbo) }, "download again"))))),
-      h("h2", {}, "Assets on the desk"),
-      h("p", { class: "small" }, Object.keys(sheet.assets || {}).join(", ") || "none")
+      h("table", {}, sheet.tgbos.map((t) => h("tr", {}, h("td", {}, t.title), h("td", { class: "small" }, new Date(t.issued).toLocaleString()), h("td", {}, `${t.trains?.length ?? "?"} clearances`), h("td", { class: t.approved ? "good small" : "small" }, t.approved ? "approved" : "unapproved"), h("td", { class: "complete small" }, t.hash.slice(0, 4).toUpperCase()), h("td", {}, h("button", { onclick: () => download(`${t.title.replace(/\W+/g, "-")}.tgbo.txt`, t.tgbo) }, "download again"))))),
+      h("h2", {}, "Assets"),
+      h("p", { class: "small" }, Object.keys(sheet.assets).join(", ") || "none"),
+      h("h2", {}, "Approvals"),
+      h("p", { class: "small" }, sheet.approvals.map((a) => `${a.title} (${a.name})`).join(", ") || "none")
     );
   };
-  var releasesTab = () => {
-    const groups = sheet.tgbos.map((rec) => {
-      const rel = sheet.releases.filter((r) => r.tgbo === rec.id);
-      return { rec, rel };
-    }).filter((g) => g.rel.length);
-    if (!groups.length) return h("p", { class: "status" }, "No releases yet. Drop .spike files or pasted RELEASE text on the desk.");
-    return h("div", {}, groups.map(({ rec, rel }) => {
-      const test = rec._test;
-      return h(
-        "div",
-        { class: "card" },
-        h("h2", {}, rec.title),
-        test ? releaseTable(rec, test, rel) : h("button", { onclick: async () => {
-          rec._test = (await parseTest(rec.source)).test;
-          rerender();
-        } }, "Score")
-      );
-    }));
+  var marksFor = (rec, pin) => {
+    var _a, _b;
+    return (_a = sheet.marks)[_b = `${rec.id}:${pin}`] ?? (_a[_b] = {});
   };
-  var releaseTable = (rec, test, rel) => {
-    const marks = (pin) => {
-      var _a, _b;
-      return (_a = sheet.marks)[_b = `${rec.id}:${pin}`] ?? (_a[_b] = {});
-    };
-    const scored = rel.map((r) => ({ r, s: scoreAttempt(test, r.attempt, marks(r.pin)) }));
+  var scoredFor = (rec, test) => sheet.releases.filter((r) => r.tgbo === rec.id).map((r) => ({ r, s: scoreAttempt(test, r.attempt, marksFor(rec, r.pin)) }));
+  var releasesTab = () => {
+    const groups = sheet.tgbos.filter((rec) => sheet.releases.some((r) => r.tgbo === rec.id));
+    if (!groups.length) return h("p", { class: "status" }, "No releases yet. Drop release files or pasted RELEASE text on the desk.");
+    return h("div", {}, groups.map((rec) => h("div", { class: "card" }, h("h2", {}, rec.title), rec._test ? releaseTable(rec, rec._test) : h("button", { onclick: async () => {
+      rec._test = (await parseTest(rec.source)).test;
+      rerender();
+    } }, "Score"))));
+  };
+  var releaseTable = (rec, test) => {
+    const scored = scoredFor(rec, test);
     const sum = summarize(test, scored.map((x) => x.s));
-    const cancelAll = async () => {
-      for (const { r, s } of scored) download(`cancel-CN${r.pin}.plate`, await cancelTGBO(rec, sheet.rtc, r.train, r.pin, s));
-    };
+    const photo = (pin) => avatar(sheet.trains.find((t) => t.pin === pin) || { name: "?" }, 40);
     return h(
       "div",
       {},
@@ -1283,10 +1452,11 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       h(
         "table",
         {},
-        h("tr", {}, h("th", {}, "Train"), h("th", {}, "Name"), h("th", {}, "Score"), h("th", {}, "Grade"), h("th", {}, "Breaks"), h("th", {}, "Identity"), h("th", {})),
+        h("tr", {}, h("th"), h("th", {}, "Train"), h("th", {}, "Name"), h("th", {}, "Score"), h("th", {}, "Grade"), h("th", {}, "Breaks"), h("th", {}, "Identity"), h("th")),
         scored.map(({ r, s }) => h(
           "tr",
           {},
+          h("td", {}, photo(r.pin)),
           h("td", {}, `CN ${r.pin}`),
           h("td", {}, r.name),
           h("td", {}, `${s.score}/${s.total}${s.pending ? ` (+${s.pending} unmarked)` : ""}`),
@@ -1296,29 +1466,51 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
           h("td", {}, h("button", { onclick: () => {
             view = { rec, test, r };
             rerender();
-          } }, "review"), " ", h("button", { onclick: async () => download(`cancel-CN${r.pin}.plate`, await cancelTGBO(rec, sheet.rtc, r.train, r.pin, s)) }, "cancel (send marks)"))
+          } }, "review"), " ", h("button", { onclick: async () => download(`cancel-CN${r.pin}.txt`, await cancelTGBO(rec, sheet.rtc, r.train, r.pin, s)) }, "cancel (send marks)"))
         ))
       ),
-      h("div", { class: "row" }, h("button", { onclick: cancelAll }, "Cancel all (download every .plate)"), h("button", { onclick: () => download(`${rec.title.replace(/\W+/g, "-")}-summary.csv`, csv(test, scored)) }, "Summary CSV")),
+      h(
+        "div",
+        { class: "row" },
+        h("button", { onclick: async () => {
+          for (const { r, s } of scored) download(`cancel-CN${r.pin}.txt`, await cancelTGBO(rec, sheet.rtc, r.train, r.pin, s));
+        } }, "Cancel all"),
+        h("button", { onclick: () => download(`${rec.title.replace(/\W+/g, "-")}-summary.csv`, csv(test, scored)) }, "Summary CSV"),
+        sheet.superintendent ? h("button", { onclick: async () => download(`report-${rec.title.replace(/\W+/g, "-")}.txt`, await sendReport(sheet.rtc, sheet.superintendent.pub, reportFor(rec, test, scored, sum))) }, `Report to ${sheet.superintendent.name}`) : h("span", { class: "small" }, "Drop the superintendent's profile on the desk to send reports.")
+      ),
       h("h2", {}, "By area (class mean)"),
       h("table", {}, sum.byArea.map((a) => h("tr", {}, h("td", {}, a.label), h("td", {}, `${Math.round(a.mean * 100)}%`), h("td", {}, h("div", { class: "meter" }, h("div", { style: { width: Math.round(a.mean * 100) + "%" } })))))),
       h("h2", {}, "Hardest items"),
       h("table", {}, sum.byItem.slice(0, 10).map((i) => h("tr", {}, h("td", {}, i.id), h("td", {}, i.ref.join(", ")), h("td", {}, `${i.correct}/${i.n} fully correct`))))
     );
   };
+  var reportFor = (rec, test, scored, sum) => ({
+    tgbo: rec.id,
+    title: rec.title,
+    hash: rec.hash,
+    approved: !!rec.approved,
+    rtc: { name: sheet.rtc.name, pin: sheet.rtc.pin },
+    issued: rec.issued,
+    sent: Date.now(),
+    pass: test.settings.pass,
+    n: sum.n,
+    passed: sum.passed,
+    mean: sum.mean,
+    byArea: sum.byArea.map((a) => ({ id: a.id, label: a.label, mean: a.mean })),
+    hardest: sum.byItem.slice(0, 10).map((i) => ({ id: i.id, ref: i.ref, difficulty: i.difficulty })),
+    rows: scored.map(({ r, s }) => ({ pin: r.pin, name: r.name, score: s.score, total: s.total, grade: s.grade, pass: s.pass, pending: s.pending, breaks: r.attempt.breaks?.length || 0, identity: r.identity, areas: s.areas.map((a) => ({ id: a.id, correct: a.correct, total: a.total })), read: s.read }))
+  });
   var csv = (test, scored) => {
     const head = ["pin", "name", "score", "total", "grade", "pass", "breaks", "identity", ...test.areas.map((a) => a.id), ...test.items.map((i) => i.id)];
     const rows = scored.map(({ r, s }) => [r.pin, r.name, s.score, s.total, s.grade.toFixed(3), s.pass, r.attempt.breaks?.length || 0, r.identity, ...s.areas.map((a) => `${a.correct}/${a.total}`), ...s.perItem.map((i) => i.got)]);
     return [head, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
   };
-  var view = null;
   var reviewView = () => {
-    var _a, _b;
     const { rec, test, r } = view;
-    const marks = (_a = sheet.marks)[_b = `${rec.id}:${r.pin}`] ?? (_a[_b] = {});
+    const marks = marksFor(rec, r.pin);
     const s = scoreAttempt(test, r.attempt, marks);
     const raw = { items: JSON.parse(atob(rec.tgbo.split("\n\n")[1].replace(/-----END[\s\S]*$/, "").replace(/\s+/g, ""))).items };
-    const canvas = h("canvas", { width: 900, height: 700, style: { width: "100%", border: "1px solid #ddd" } });
+    const canvas = h("canvas", { width: 900, height: 600, style: { width: "100%", border: "1px solid #ddd" } });
     const order = r.attempt.events.filter((e) => e[1] === "show").map((e) => e[2]).filter((v, i, a) => a.indexOf(v) === i);
     let cursor = r.attempt.events.length;
     const slider = h("input", { type: "range", min: 0, max: r.attempt.events.length, value: cursor, oninput: (e) => {
@@ -1344,7 +1536,7 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
         view = null;
         rerender();
       } }, "\u2190 back"),
-      h("h2", {}, `CN ${r.pin} ${r.name} \u2014 ${rec.title}: ${s.score}/${s.total} (${Math.round(s.grade * 100)}%)`),
+      h("div", { class: "row" }, avatar(sheet.trains.find((t) => t.pin === r.pin) || { name: "?" }, 56), h("h2", {}, `CN ${r.pin} ${r.name} \u2014 ${rec.title}: ${s.score}/${s.total} (${Math.round(s.grade * 100)}%)`)),
       h("h2", {}, "Answers"),
       h("table", {}, test.items.map((it) => {
         const a = r.attempt.answers[it.id];
@@ -1369,17 +1561,14 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       canvas
     );
   };
-  var root;
-  var go;
-  var rerender = () => render(root, {}, go);
   var render = async (r, ctx2, g) => {
     root = r;
     go = g;
-    if (ctx2.fresh && !sheet) {
-      const name = prompt("RTC name or initials (goes on every Complete)") || "RTC";
-      sheet = await newSheet(name);
+    if (ctx2.register) return renderRegister(root, "rtc", "RTC", async (p) => {
+      sheet = await newSheet(p);
       note("new sheet");
-    }
+      go({ screen: "rtc" });
+    }, { extractable: true });
     if (ctx2.sheetText) {
       const pw = prompt("Sheet passphrase");
       if (pw == null) return go({ screen: "home" });
@@ -1391,10 +1580,9 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
         return go({ screen: "home", error: e.message });
       }
     }
-    if (!sheet) return mount(root, h("h1", {}, "RTC"), h("p", {}, "Open a sheet (.bed) from the home page, or start a new one."), h("button", { onclick: () => go({ screen: "rtc", fresh: true }) }, "New sheet"), h("button", { onclick: () => go({ screen: "home" }) }, "Home"));
-    sheet.marks ?? (sheet.marks = {});
-    sheet.releases ?? (sheet.releases = []);
-    sheet.assets ?? (sheet.assets = {});
+    if (!sheet) return mount(root, h("h1", {}, "RTC"), h("p", {}, "Your desk is a sheet file, encrypted under your passphrase. Open yours, or register to start one."), h("div", { class: "row" }, h("button", { class: "primary", onclick: () => go({ screen: "rtc", register: true }) }, "Register and start a sheet"), h("label", { class: "btn" }, "Open a sheet", h("input", { type: "file", style: { display: "none" }, onchange: async (e) => go({ screen: "rtc", sheetText: await readFileText(e.target.files[0]) }) }))), h("button", { onclick: () => go({ screen: "home" }) }, "Home"));
+    for (const k of ["marks", "assets"]) sheet[k] ?? (sheet[k] = {});
+    for (const k of ["releases", "approvals", "trains", "tgbos"]) sheet[k] ?? (sheet[k] = []);
     if (ctx2.incoming) {
       await intake(ctx2.incoming);
       ctx2.incoming = null;
@@ -1406,23 +1594,8 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
       }
       const { draft, ...persist } = sheet;
       for (const t of persist.tgbos) delete t._test;
-      download(`${sheet.rtc.name.replace(/\W+/g, "-")}.bed`, await saveSheet(persist, pass));
+      download(`sheet-${sheet.rtc.name.replace(/\W+/g, "-")}.txt`, await saveSheet(persist, pass));
       note("sheet saved");
-      rerender();
-    };
-    const takeFiles = async (files) => {
-      const items = [];
-      for (const f of files) {
-        if (/\.png$/i.test(f.name)) {
-          const t = badgeRead(await readFileBytes(f));
-          items.push(t ? { name: f.name, text: t } : { name: f.name, asset: f });
-        } else if (/\.(jpe?g|gif|webp)$/i.test(f.name)) items.push({ name: f.name, asset: f });
-        else {
-          const text2 = await readFileText(f);
-          items.push(sniff(text2) ? { name: f.name, text: text2 } : { name: f.name, text: text2, source: true });
-        }
-      }
-      await intake(items);
       rerender();
     };
     const drop = h(
@@ -1435,67 +1608,246 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
         drop.classList.remove("over");
         takeFiles(e.dataTransfer.files);
       } },
-      "Drop badges, test sources, images, releases here",
+      "Drop profiles, test sources, images, approvals, releases here",
       h("br"),
       h("label", { class: "btn", style: { marginTop: "8px", display: "inline-block" } }, "Choose files", h("input", { type: "file", multiple: true, style: { display: "none" }, onchange: (e) => takeFiles(e.target.files) }))
     );
-    const paste = h("textarea", { rows: 3, placeholder: "Or paste CREW / RELEASE text\u2026" });
+    const paste = h("textarea", { rows: 3, placeholder: "Or paste PROFILE / APPROVAL / RELEASE text\u2026" });
     mount(
       root,
-      h("div", { class: "bar" }, h("span", {}, `RTC ${sheet.rtc.name}`), h("span", {}, `${sheet.trains.length} trains \xB7 ${sheet.tgbos.length} TGBOs \xB7 ${sheet.releases.length} releases`), h("button", { onclick: save }, "Save sheet (.bed)")),
-      h("div", { class: "row" }, drop),
+      h("div", { class: "bar" }, h("span", { class: "row" }, avatar(sheet.rtc, 28), ` RTC ${sheet.rtc.name}`), h("span", {}, `${sheet.trains.length} trains \xB7 ${sheet.tgbos.length} TGBOs \xB7 ${sheet.releases.length} releases`), h("button", { onclick: save }, "Save sheet")),
+      h("div", { class: "row" }, h("div", { style: { flex: 1 } }, drop), profileCard(sheet.rtc, await profileText(sheet.rtc))),
       h("div", { class: "row" }, paste, h("button", { onclick: async () => {
         await intake([{ name: "pasted", text: paste.value }]);
         paste.value = "";
         rerender();
       } }, "Take")),
       notes.length ? h("ul", { class: "small" }, notes.map((n) => h("li", { class: n.bad ? "bad" : "" }, n.m))) : null,
-      view ? reviewView() : h(
-        "div",
-        {},
-        h("div", { class: "tabs" }, ["trains", "tests", "releases"].map((t) => h("button", { class: tab === t ? "on" : "", onclick: () => {
-          tab = t;
-          rerender();
-        } }, t[0].toUpperCase() + t.slice(1)))),
-        tab === "trains" ? trainsTab() : tab === "tests" ? testsTab() : releasesTab()
-      ),
+      view ? reviewView() : h("div", {}, h("div", { class: "tabs" }, ["trains", "tests", "releases"].map((t) => h("button", { class: tab === t ? "on" : "", onclick: () => {
+        tab = t;
+        rerender();
+      } }, t[0].toUpperCase() + t.slice(1)))), tab === "trains" ? trainsTab() : tab === "tests" ? testsTab() : releasesTab()),
       h("p", { class: "small" }, h("button", { onclick: () => go({ screen: "home" }) }, "Home"))
     );
   };
 
+  // src/app/super.js
+  var book = null;
+  var tab2 = "reports";
+  var pass2 = "";
+  var notes2 = [];
+  var root2;
+  var go2;
+  var note2 = (m, bad = false) => {
+    notes2.unshift({ m, bad });
+    notes2 = notes2.slice(0, 6);
+  };
+  var rerender2 = () => render2(root2, {}, go2);
+  var intake2 = async (items) => {
+    for (const it of items) {
+      try {
+        const kind = sniff(it.text);
+        if (kind === "PROFILE") {
+          const p = await readProfile(it.text);
+          if (p.role !== "rtc") {
+            note2(`${p.name} is ${p.role}, not an RTC`, true);
+            continue;
+          }
+          book.trains = book.trains.filter((x) => x.pin !== p.pin);
+          book.trains.push(p);
+          note2(`RTC ${p.name}`);
+          tab2 = "rtcs";
+        } else if (kind === "REPORT") {
+          const { teacher, report } = await takeReport(it.text, book.rtc);
+          const rtc = book.trains.find((t) => t.pub === teacher);
+          book.reports = book.reports.filter((x) => x.report.tgbo !== report.tgbo);
+          book.reports.push({ teacher, rtcName: rtc?.name || report.rtc?.name || "?", known: !!rtc, report });
+          note2(`report: ${report.title} from ${rtc?.name || "unknown RTC"}${rtc ? "" : " (not on the book)"}`, !rtc);
+          tab2 = "reports";
+        } else if (kind) note2(`${it.name}: a ${kind} does not belong in the book`, true);
+        else {
+          const { test, errors } = await parseTest(it.text);
+          if (errors.length) {
+            note2(`${it.name}: ${errors[0]}`, true);
+            continue;
+          }
+          const hash = await sourceHash(it.text);
+          book.sources = book.sources.filter((s) => s.hash !== hash);
+          book.sources.push({ name: it.name, title: test.title, items: test.items.length, hash, source: it.text, approved: null });
+          note2(`source ${test.title} (${test.items.length} items)`);
+          tab2 = "inventory";
+        }
+      } catch (e) {
+        note2(`${it.name}: ${e.message}`, true);
+      }
+    }
+  };
+  var takeFiles2 = async (files) => {
+    const items = [];
+    for (const f of files) items.push({ name: f.name, text: await readFileText(f) });
+    await intake2(items);
+    rerender2();
+  };
+  var rtcsTab = () => h("table", {}, book.trains.map((t) => h("tr", {}, h("td", {}, avatar(t, 48)), h("td", {}, t.name), h("td", {}, t.pin), h("td", { class: "small" }, t.pub.slice(0, 12) + "\u2026"))), book.trains.length ? null : h("tr", {}, h("td", { class: "status" }, "Drop RTC profiles here.")));
+  var inventoryTab = () => h(
+    "div",
+    {},
+    h("p", { class: "small" }, "Drop test sources. Approve signs the source's hash; give the approval file to the RTC, who drops it on their desk. A TGBO built from a byte-identical source then carries the approval."),
+    h(
+      "table",
+      {},
+      h("tr", {}, h("th", {}, "Test"), h("th", {}, "Items"), h("th", {}, "Hash"), h("th", {}, "Status"), h("th")),
+      book.sources.map((s) => h(
+        "tr",
+        {},
+        h("td", {}, s.title),
+        h("td", {}, s.items),
+        h("td", { class: "small complete" }, s.hash.slice(0, 12)),
+        h("td", { class: s.approved ? "good" : "small" }, s.approved ? `approved ${new Date(s.approved).toLocaleDateString()}` : "not approved"),
+        h("td", {}, h("button", { class: s.approved ? "" : "primary", onclick: async () => {
+          const text2 = await approveSource(book.rtc, s.source, s.title);
+          s.approved = Date.now();
+          download(`approval-${s.title.replace(/\W+/g, "-")}.txt`, text2);
+          note2(`approved ${s.title}`);
+          rerender2();
+        } }, s.approved ? "approval again" : "Approve"), " ", h("button", { onclick: () => download(s.name, s.source) }, "source"))
+      ))
+    )
+  );
+  var reportsTab = () => {
+    var _a;
+    const reps = book.reports.map((x) => x.report);
+    const byPin = {};
+    for (const x of book.reports) for (const r of x.report.rows) (byPin[_a = r.pin] ?? (byPin[_a] = { name: r.name, rows: [] })).rows.push({ title: x.report.title, grade: r.grade, pass: r.pass, rtc: x.rtcName, when: x.report.sent });
+    return h(
+      "div",
+      {},
+      h("h2", {}, "Administrations"),
+      h(
+        "table",
+        {},
+        h("tr", {}, h("th", {}, "Test"), h("th", {}, "RTC"), h("th", {}, "Approved"), h("th", {}, "Issued"), h("th", {}, "n"), h("th", {}, "Passed"), h("th", {}, "Mean"), h("th", {}, "Weakest area")),
+        book.reports.map((x) => {
+          const r = x.report;
+          const weak = [...r.byArea].sort((a, b) => a.mean - b.mean)[0];
+          return h("tr", {}, h("td", {}, r.title), h("td", { class: x.known ? "" : "bad" }, x.rtcName), h("td", { class: r.approved ? "good" : "bad" }, r.approved ? "yes" : "no"), h("td", { class: "small" }, new Date(r.issued).toLocaleDateString()), h("td", {}, r.n), h("td", {}, `${r.passed} (${Math.round(100 * r.passed / (r.n || 1))}%)`), h("td", {}, `${Math.round(r.mean * 100)}%`), h("td", {}, weak ? `${weak.label} ${Math.round(weak.mean * 100)}%` : ""));
+        }),
+        reps.length ? null : h("tr", {}, h("td", { class: "status" }, "Drop report files from RTCs here."))
+      ),
+      h("h2", {}, "By crew member"),
+      h("table", {}, Object.entries(byPin).sort().map(([pin, v]) => h("tr", {}, h("td", {}, `CN ${pin}`), h("td", {}, v.name), h("td", {}, v.rows.map((r) => h("div", { class: r.pass ? "good small" : "bad small" }, `${r.title}: ${Math.round(r.grade * 100)}% (${r.rtc})`)))))),
+      reps.length ? h("button", { onclick: () => download("administrations.csv", csvAll()) }, "All rows as CSV") : null
+    );
+  };
+  var csvAll = () => {
+    const rows = [["test", "rtc", "approved", "issued", "pin", "name", "score", "total", "grade", "pass", "breaks", "identity"]];
+    for (const x of book.reports) for (const r of x.report.rows) rows.push([x.report.title, x.rtcName, x.report.approved, new Date(x.report.issued).toISOString(), r.pin, r.name, r.score, r.total, r.grade.toFixed(3), r.pass, r.breaks, r.identity]);
+    return rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+  };
+  var render2 = async (r, ctx2, g) => {
+    root2 = r;
+    go2 = g;
+    if (ctx2.register) return renderRegister(root2, "superintendent", "superintendent", async (p) => {
+      book = await newBook(p);
+      note2("new book");
+      go2({ screen: "super" });
+    }, { extractable: true });
+    if (ctx2.bookText) {
+      const pw = prompt("Book passphrase");
+      if (pw == null) return go2({ screen: "home" });
+      try {
+        book = await openBook(ctx2.bookText, pw);
+        pass2 = pw;
+        note2(`opened book for ${book.rtc.name}`);
+      } catch (e) {
+        return go2({ screen: "home", error: e.message });
+      }
+    }
+    if (!book) return mount(root2, h("h1", {}, "Superintendent"), h("p", {}, "Your book holds the RTCs, the approved tests, and every report. It is a file encrypted under your passphrase."), h("div", { class: "row" }, h("button", { class: "primary", onclick: () => go2({ screen: "super", register: true }) }, "Register and start a book"), h("label", { class: "btn" }, "Open a book", h("input", { type: "file", style: { display: "none" }, onchange: async (e) => go2({ screen: "super", bookText: await readFileText(e.target.files[0]) }) }))), h("button", { onclick: () => go2({ screen: "home" }) }, "Home"));
+    for (const k of ["trains", "sources", "reports"]) book[k] ?? (book[k] = []);
+    if (ctx2.incoming) {
+      await intake2(ctx2.incoming);
+      ctx2.incoming = null;
+    }
+    const save = async () => {
+      if (!pass2) {
+        pass2 = prompt("Choose a passphrase for this book") || "";
+        if (!pass2) return;
+      }
+      download(`book-${book.rtc.name.replace(/\W+/g, "-")}.txt`, await saveBook(book, pass2));
+      note2("book saved");
+      rerender2();
+    };
+    const drop = h("div", { class: "drop", ondragover: (e) => {
+      e.preventDefault();
+      drop.classList.add("over");
+    }, ondragleave: () => drop.classList.remove("over"), ondrop: (e) => {
+      e.preventDefault();
+      drop.classList.remove("over");
+      takeFiles2(e.dataTransfer.files);
+    } }, "Drop RTC profiles, test sources, reports here", h("br"), h("label", { class: "btn", style: { marginTop: "8px", display: "inline-block" } }, "Choose files", h("input", { type: "file", multiple: true, style: { display: "none" }, onchange: (e) => takeFiles2(e.target.files) })));
+    const paste = h("textarea", { rows: 3, placeholder: "Or paste PROFILE / REPORT text\u2026" });
+    mount(
+      root2,
+      h("div", { class: "bar" }, h("span", { class: "row" }, avatar(book.rtc, 28), ` Superintendent ${book.rtc.name}`), h("span", {}, `${book.trains.length} RTCs \xB7 ${book.sources.length} tests \xB7 ${book.reports.length} reports`), h("button", { onclick: save }, "Save book")),
+      h("div", { class: "row" }, h("div", { style: { flex: 1 } }, drop), profileCard(book.rtc, await profileText(book.rtc))),
+      h("div", { class: "row" }, paste, h("button", { onclick: async () => {
+        await intake2([{ name: "pasted", text: paste.value }]);
+        paste.value = "";
+        rerender2();
+      } }, "Take")),
+      notes2.length ? h("ul", { class: "small" }, notes2.map((n) => h("li", { class: n.bad ? "bad" : "" }, n.m))) : null,
+      h("div", { class: "tabs" }, [["reports", "Reports"], ["inventory", "Test inventory"], ["rtcs", "RTCs"]].map(([t, l]) => h("button", { class: tab2 === t ? "on" : "", onclick: () => {
+        tab2 = t;
+        rerender2();
+      } }, l))),
+      tab2 === "reports" ? reportsTab() : tab2 === "inventory" ? inventoryTab() : rtcsTab(),
+      h("p", { class: "small" }, h("button", { onclick: () => go2({ screen: "home" }) }, "Home"))
+    );
+  };
+
   // src/app/main.js
-  var root2 = document.querySelector("main");
+  var root3 = document.querySelector("main");
   var ctx = { screen: "home" };
-  var go2 = (next) => {
+  var go3 = (next) => {
     ctx = next;
-    render2();
+    render3();
+  };
+  var roleKey = "ballast.role";
+  var remember = (r) => {
+    try {
+      localStorage.setItem(roleKey, r);
+    } catch {
+    }
+  };
+  var remembered = () => {
+    try {
+      return localStorage.getItem(roleKey);
+    } catch {
+      return null;
+    }
   };
   var openText = async (text2, name = "") => {
     const kind = sniff(text2);
-    if (kind === "TGBO") return go2({ screen: "copy", text: text2 });
-    if (kind === "CANCEL") return go2({ screen: "cancel", text: text2 });
-    if (kind === "SHEET") return go2({ screen: "rtc", sheetText: text2 });
-    if (kind === "RELEASE" || kind === "CREW") return go2({ screen: "rtc", incoming: [{ name, text: text2 }] });
-    if (/^#|\n---/.test(text2)) return go2({ screen: "rtc", incoming: [{ name, text: text2, source: true }] });
-    go2({ screen: "home", error: `Not a Ballast file${name ? ": " + name : ""}` });
+    if (kind === "TGBO") return go3({ screen: "copy", text: text2 });
+    if (kind === "CANCEL") return go3({ screen: "cancel", text: text2 });
+    if (kind === "SHEET") return go3({ screen: "rtc", sheetText: text2 });
+    if (kind === "BOOK") return go3({ screen: "super", bookText: text2 });
+    if (kind === "REPORT") return go3({ screen: "super", incoming: [{ name, text: text2 }] });
+    if (kind === "RELEASE" || kind === "APPROVAL" || kind === "PROFILE") return go3({ screen: "rtc", incoming: [{ name, text: text2 }] });
+    if (/^#|\n---/.test(text2)) return go3({ screen: "rtc", incoming: [{ name, text: text2, source: true }] });
+    go3({ screen: "home", error: `Not a Ballast file${name ? ": " + name : ""}` });
   };
   var openFiles = async (files) => {
-    const list = [...files];
-    if (!list.length) return;
-    const texts = [];
-    for (const f of list) {
-      if (/\.png$/i.test(f.name)) {
-        const t = badgeRead(await readFileBytes(f));
-        if (t) texts.push({ name: f.name, text: t });
-        else texts.push({ name: f.name, error: "badge has no crew data (re-encoded?)" });
-      } else if (/\.(jpe?g|gif|webp|svg)$/i.test(f.name)) texts.push({ name: f.name, asset: f });
-      else texts.push({ name: f.name, text: await readFileText(f) });
-    }
-    if (texts.length === 1 && texts[0].text) return openText(texts[0].text, texts[0].name);
-    go2({ screen: "rtc", incoming: texts.map((t) => t.text && /^#|\n---/.test(t.text) && !sniff(t.text) ? { ...t, source: true } : t) });
+    const f = [...files][0];
+    if (f) openText(await readFileText(f), f.name);
   };
-  var renderHome = () => {
-    const paste = h("textarea", { rows: 5, placeholder: "Or paste a Ballast file here (TGBO, RELEASE, CANCEL, SHEET, CREW)\u2026" });
+  var renderLanding = () => {
+    const card = (role, title, what, screen) => h("button", { class: "rolecard", onclick: () => {
+      remember(role);
+      go3({ screen });
+    } }, h("b", {}, title), h("span", {}, what));
+    const paste = h("textarea", { rows: 4, placeholder: "Or drop / paste any Ballast file \u2014 it opens where it belongs." });
     const drop = h(
       "div",
       { class: "drop", ondragover: (e) => {
@@ -1506,50 +1858,69 @@ table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-
         drop.classList.remove("over");
         openFiles(e.dataTransfer.files);
       } },
-      "Drop a file here",
-      h("br"),
-      h("label", { class: "btn", style: { marginTop: "10px", display: "inline-block" } }, "Choose files", h("input", { type: "file", multiple: true, onchange: (e) => openFiles(e.target.files), style: { display: "none" } }))
+      paste,
+      h("div", { class: "row" }, h("button", { onclick: () => paste.value.trim() && openText(paste.value) }, "Open"), h("label", { class: "btn" }, "Choose a file", h("input", { type: "file", style: { display: "none" }, onchange: (e) => openFiles(e.target.files) })))
     );
     mount(
-      root2,
+      root3,
       h("h1", {}, "Ballast"),
       h("p", { class: "small" }, "A test that stays on the rails. Nothing leaves this page."),
       ctx.error ? h("p", { class: "bad" }, ctx.error) : null,
-      drop,
-      paste,
-      h("div", { class: "row" }, h("button", { onclick: () => paste.value.trim() && openText(paste.value) }, "Open pasted text")),
-      h("h2", {}, "Trains"),
-      h("div", { class: "row" }, h("button", { onclick: () => go2({ screen: "register" }) }, "Register crew (make a badge)")),
-      h("h2", {}, "RTC"),
-      h("div", { class: "row" }, h("button", { onclick: () => go2({ screen: "rtc", fresh: true }) }, "Open the desk (new sheet)")),
-      h("p", { class: "small" }, "Trains: register once, send your badge, drop the TGBO your RTC sends you. RTC: open a sheet, add badges, load a test, issue the TGBO, drop the releases.")
+      h(
+        "div",
+        { class: "roles" },
+        card("crew", "Crew", "I am writing a test.", "home"),
+        card("rtc", "RTC", "I am giving a test.", "rtc"),
+        card("superintendent", "Superintendent", "I approve tests and read results across classes.", "super")
+      ),
+      drop
     );
   };
-  var render2 = async () => {
+  var render3 = async () => {
     switch (ctx.screen) {
-      case "home":
-        return renderHome();
+      case "landing":
+        return renderLanding();
+      case "home": {
+        if (!remembered()) return renderLanding();
+        const r = remembered();
+        if (r === "rtc") return render(root3, ctx, go3);
+        if (r === "superintendent") return render2(root3, ctx, go3);
+        return renderHome(root3, go3);
+      }
       case "register":
-        return renderRegister(root2, go2);
+        return renderRegisterCrew(root3, go3);
       case "registered":
-        return renderRegistered(root2, ctx, go2);
+        return renderRegistered(root3, go3);
       case "copy":
-        return renderCopy(root2, ctx, go2);
+        return renderCopy(root3, ctx, go3);
+      case "practice":
+        return renderCopy(root3, { practice: true }, go3);
       case "work":
-        return renderWork(root2, ctx, go2);
+        return renderWork(root3, ctx, go3);
       case "released":
-        return renderReleased(root2, ctx, go2);
+        return renderReleased(root3, ctx, go3);
       case "cancel":
-        return renderCancel(root2, ctx, go2);
+        return renderCancel(root3, ctx, go3);
+      case "marks":
+        return renderMarks(root3, ctx, go3);
       case "rtc":
-        return render(root2, ctx, go2);
+        return render(root3, ctx, go3);
+      case "super":
+        return render2(root3, ctx, go3);
       default:
-        return renderHome();
+        return renderLanding();
     }
   };
+  document.body.prepend(h("nav", { class: "top" }, h("a", { href: "#", onclick: (e) => {
+    e.preventDefault();
+    go3({ screen: "home" });
+  } }, "Ballast"), " \xB7 ", h("a", { href: "#", onclick: (e) => {
+    e.preventDefault();
+    go3({ screen: "landing" });
+  } }, "switch role")));
   window.addEventListener("dragover", (e) => e.preventDefault());
   window.addEventListener("drop", (e) => e.preventDefault());
-  render2();
+  render3();
 })();
 </script>
 </body>
