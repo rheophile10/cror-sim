@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-iA/e6lJgrRg1ftcHj7dIEQ7xf7J+H9stk6AnHFBg2Fg='; style-src 'sha256-hxoQr9cBSFG7zVh8qS0rm93EzNy0LCkti5p2R+0Znq8='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-y6OvCwIjjflxiKXiV2YoYHErUYErvKM04cMZOYbfatg='; style-src 'sha256-IrFowNEvZm1c0SHqyx95FjhoTZTI5Y1cmclXjUeJ9ik='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast tutorial</title>
 <style>* { box-sizing:border-box } html, body { margin:0; height:100%; font:14px/1.4 "Segoe UI", Arial, sans-serif; overflow:hidden; background:#0b3d5c }
 .desk { position:absolute; inset:0; background:radial-gradient(ellipse at 30% 20%, #1e6a8f 0%, #0b3d5c 55%, #072a40 100%); overflow:hidden }
@@ -27,6 +27,8 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
 .toast { position:absolute; right:16px; bottom:52px; background:#111; color:#fff; padding:10px 14px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.4); z-index:9 }
 /* coach */
 .coach { position:absolute; left:0; top:22px; bottom:40px; width:320px; background:#fff7ed; border-right:3px solid #f59e0b; padding:14px 16px; overflow:auto; z-index:6; box-shadow:6px 0 20px rgba(0,0,0,.25) }
+.toc { margin:-4px -16px 12px; padding:8px 12px 10px; background:#fde68a; border-bottom:2px solid #f59e0b } .chunks { display:flex; gap:4px; margin-bottom:6px } .chunk { flex:1; font:600 12px/1.2 inherit; padding:7px 4px; border:1px solid #d97706; border-radius:6px; background:#fff; color:#7c2d12; cursor:pointer } .chunk.on { background:#f59e0b; color:#fff } .chunk.done { background:#fef3c7 } .chunk:hover { background:#fbbf24; color:#111 }
+.sections { margin:0; padding-left:20px; font-size:13px; columns:1 } .sections li { margin:1px 0 } .sections li a { color:#7c2d12; text-decoration:none } .sections li.past a::before { content:'✓ '; color:#16a34a } .sections li.cur a { color:#111; font-weight:700 } .sections li.cur a::before { content:'▶ ' } .sections li.todo a { color:#92400e; text-decoration:underline dotted } .tochelp { margin:6px 0 0; color:#7c2d12 }
 .nav { margin:0 0 10px; font-size:13px } .nav summary { cursor:pointer; font-weight:600; color:#92400e } .navchunk { margin:6px 0 } .navhead { font-weight:600; color:#7c2d12; margin:4px 0 2px } .nav ol { margin:0; padding-left:18px } .nav li { margin:1px 0; color:#999 } .nav li.past a { color:#92400e; text-decoration:none } .nav li.past a::before { content:'✓ '; color:#16a34a } .nav li.cur { color:#111; font-weight:700 } .nav li.cur a { color:#111; text-decoration:none }
 .notepad { display:flex; flex-direction:column; flex:1; min-height:0; background:#fff } .notebar { padding:6px 10px; border-bottom:1px solid #ddd; display:flex; gap:10px; align-items:center } .noteedit { flex:1; border:none; resize:none; padding:12px 16px; font:13px/1.5 Consolas, 'Courier New', monospace; outline:none }
 .coach h2 { margin:0 0 4px; font-size:16px } .coach .phase { font-size:11px; color:#92400e; text-transform:uppercase; letter-spacing:.06em } .coach p { margin:8px 0 } .coach .btns { display:flex; gap:8px; margin-top:12px } .coach button { font:inherit; padding:6px 12px; border:1px solid #f59e0b; border-radius:6px; background:#fff; cursor:pointer } .coach button.primary { background:#f59e0b; color:#fff } .coach button:disabled { opacity:.4; cursor:default }
@@ -454,6 +456,7 @@ ${root2.pub}`;
     ].join("\n\n")),
     { phase: "superintendent", title: "Save the book, then step down", text: "Save your book (any passphrase). Then you will be demoted: the real superintendent, Marguerite Boudreau, has minted your registration as an RTC. Her profile for you is in Inbox \u2014 open it with Ballast and accept the new role.", arrive: "demoteToRtc", explorer: "Inbox", done: (st2) => st2.ballast.role === "rtc" },
     // ---------- rtc
+    { phase: "rtc", title: "Become an RTC", text: "To work this part you need an RTC role. If you have not registered yet, do that first in Ballast (a name and any 6-digit PIN). The superintendent, Marguerite Boudreau, then mints your registration as an RTC: her profile for you lands in Inbox \u2014 open it with Ballast and accept.", arrive: "demoteToRtc", explorer: "Inbox", skipIf: (st2) => st2.ballast.role === "rtc", done: (st2) => st2.ballast.role === "rtc" },
     { phase: "rtc", title: "Start a sheet", text: 'Your desk is a sheet, under a passphrase. Start one. Then make a class: Crew tab, New class, call it "Block C".', hint: ["button.primary", "Start a sheet."], done: (st2) => st2.ballast.screen === "desk" },
     { phase: "rtc", title: "Mint students", text: "Four crew members registered and sent their registrations to you. Open them from Inbox, then mint each one on the Crew tab and put them in your class. Their minted profiles carry your superintendent's key, so they will only ever write tests she signed.", arrive: "crewRegistrations", explorer: "Inbox", done: (st2) => st2.files.filter((f) => f.folder === "Outbox" && /^profile-crew-\d/.test(f.name)).length >= 4 },
     { phase: "rtc", title: "Disseminate a test", text: "Test 2 arrived in Tests with the superintendent's approval. Open both with Ballast. On Tests, set the window \u2014 when the clearance opens and closes; outside it the file will not decrypt \u2014 choose your class and Issue. One file goes to the whole class, with a clearance for each person. It lands in Outbox. Without the approval, Ballast warns you: crew would refuse it.", arrive: "testForClass", explorer: "Tests", done: (st2) => exported(st2, /\.test\.txt$/) },
@@ -462,6 +465,7 @@ ${root2.pub}`;
     { phase: "rtc", title: "Pass out grades", text: `On Releases: Cancel all (export) writes every person's marks \u2014 signed by you, naming their release hash \u2014 into a folder you pick in a real browser, or as one file each plus one bundle of them all; here they land in Outbox. Then "Class profile to \u2026" files the report with the superintendent \u2014 drop her profile from Inbox first if the button is missing. Save your sheet.`, arrive: "supProfile", explorer: "Inbox", done: (st2) => exported(st2, /^class-profile-/) },
     { phase: "rtc", title: "Step down again", text: 'Denise Okafor, one of the RTCs, has minted your registration as crew. Her profile for you is in Inbox. Open it and accept. Look at your profile card afterwards: "under superintendent Marguerite Boudreau" \u2014 that is the key your copy will check tests against.', arrive: "demoteToCrew", explorer: "Inbox", done: (st2) => st2.ballast.role === "crew" },
     // ---------- crew
+    { phase: "crew", title: "Become crew", text: "To work this part you need a crew role. If you have not registered yet, do that first in Ballast (a name and any 6-digit PIN). Denise Okafor, an RTC, then mints your registration as crew: her profile for you lands in Inbox \u2014 open it with Ballast and accept.", arrive: "demoteToCrew", explorer: "Inbox", skipIf: (st2) => st2.ballast.role === "crew", done: (st2) => st2.ballast.role === "crew" },
     info("crew", "What protects the test \u2014 and what cannot", [
       'First the honest part: once a question is on your screen it is cleartext for you. No software can stop a person from reading what it shows them, remembering it, or photographing it. Ballast does not pretend otherwise, and neither should anyone selling you a "secure" test.',
       "What it does do: the test file holds every item encrypted under its own key, and only your clearance \u2014 your key plus your PIN, inside the window \u2014 opens them, one at a time. The correct answers are never in the file. Fullscreen with the keyboard locked; copy, cut, print and save refused; leaving the tab, the window or fullscreen is recorded as a break and shown to the RTC; a second tab is a break; your PIN is drawn across every item, so a photo carries your name."
@@ -2272,13 +2276,18 @@ Ray`, fresh: true }],
     return reg?.parsed || st.userReg;
   };
   var arrive = async (key) => {
-    if (!key || st.arrived[key] || !arrivals[key]) return;
-    st = { ...st, arrived: { ...st.arrived, [key]: true } };
-    const items = await arrivals[key]().catch((e) => {
-      console.error(e);
-      set(toast(st, `Could not stage ${key}: ${e.message}`));
-      return [];
-    });
+    if (!key || st.arrived[key] === true || !arrivals[key]) return;
+    let items;
+    try {
+      items = await arrivals[key]();
+    } catch (e) {
+      const first = !st.arrived[key];
+      st = { ...st, arrived: { ...st.arrived, [key]: "waiting" }, stage: e.message };
+      if (first) set(toast(st, `Not yet: ${e.message}`));
+      else render2();
+      return;
+    }
+    st = { ...st, arrived: { ...st.arrived, [key]: true }, stage: null };
     let s = st;
     for (const [folder, f] of items) s = folder === "mail" ? addMail(s, f) : folder === "chat" ? addChat(s, f) : addFile(s, folder, f.name, f.text, f.from, f.note ? { note: true } : {});
     set(items.length ? toast(s, `${items.length} file(s) arrived in ${items[0][0]}`) : s);
@@ -2380,25 +2389,38 @@ Ray`, fresh: true }],
   var next = async () => {
     const n = st.step + 1;
     if (n >= steps.length) return;
-    set({ ...st, step: n, stepDone: false });
+    set({ ...st, step: n, stepDone: false, viewStep: null, stage: null });
     const s = steps[n];
+    if (s.skipIf?.(st)) return next();
     if (s.explorer) set(cd(openWindow(st, "explorer", "WNR-TRAINING \u2014 Training"), s.explorer));
     await arrive(s.arrive);
     coach();
   };
-  var navOpen = false;
-  var nav = () => h(
-    "details",
-    { class: "nav", open: navOpen, ontoggle: (e) => {
-      navOpen = e.target.open;
-    } },
-    h("summary", {}, "Contents"),
-    PHASES.map((ph) => h("div", { class: "navchunk" }, h("div", { class: "navhead" }, PHASE_TITLES[ph]), h("ol", {}, steps.map((x, i) => ({ x, i })).filter(({ x }) => x.phase === ph).map(({ x, i }) => h("li", { class: i === st.step ? "cur" : i < st.step ? "past" : "todo" }, i <= st.step ? h("a", { href: "#", onclick: (e) => {
-      e.preventDefault();
+  var jumpTo = async (i) => {
+    if (i <= st.step) {
       st = { ...st, viewStep: i === st.step ? null : i };
-      renderCoach();
-    } }, x.title) : x.title)))))
-  );
+      return renderCoach();
+    }
+    while (st.step < i) {
+      const before = st.step;
+      await next();
+      if (st.step === before) break;
+    }
+  };
+  var jumpChunk = (ph) => jumpTo(steps.findIndex((x) => x.phase === ph));
+  var nav = () => {
+    const cur = steps[st.step].phase;
+    return h(
+      "div",
+      { class: "toc" },
+      h("div", { class: "chunks" }, PHASES.map((ph) => h("button", { class: "chunk" + (ph === cur ? " on" : PHASES.indexOf(ph) < PHASES.indexOf(cur) ? " done" : ""), onclick: () => jumpChunk(ph), title: `Jump to ${PHASE_TITLES[ph]}` }, PHASE_TITLES[ph]))),
+      h("ol", { class: "sections" }, steps.map((x, i) => ({ x, i })).filter(({ x }) => x.phase === cur).map(({ x, i }) => h("li", { class: i === st.step ? "cur" : i < st.step ? "past" : "todo" }, h("a", { href: "#", onclick: (e) => {
+        e.preventDefault();
+        jumpTo(i);
+      }, title: i < st.step ? "Re-read" : i > st.step ? "Skip to this section" : "" }, x.title)))),
+      h("p", { class: "small tochelp" }, "Do only the parts you care about: jump to a chunk or skip to a section \u2014 the coach stages what each part needs.")
+    );
+  };
   var renderCoach = () => {
     const s = current();
     const done = s.done(st) || st.stepDone;
@@ -2410,6 +2432,7 @@ Ray`, fresh: true }],
         renderCoach();
       } }, "Back to where I am")));
     }
+    const stage = st.stage ? h("p", { class: "waiting" }, `Not yet: ${st.stage}`) : null;
     mount(
       coachEl,
       nav(),
@@ -2417,7 +2440,7 @@ Ray`, fresh: true }],
       h("h2", {}, s.title),
       h("div", { class: "progress" }, h("div", { style: { width: Math.round(100 * st.step / (steps.length - 1)) + "%" } })),
       s.text.split("\n\n").map((t) => h("p", {}, t)),
-      s.arrive && !st.arrived[s.arrive] ? h("p", { class: "waiting" }, "staging files\u2026") : null,
+      s.arrive && st.arrived[s.arrive] !== true ? stage || h("p", { class: "waiting" }, "staging files\u2026") : null,
       st.step >= steps.length - 1 ? h("p", { class: "done" }, "The end.") : done ? h("p", { class: "done" }, s.info ? "Next when you are ready." : "Done \u2014 moving on.") : h("p", { class: "waiting" }, "Waiting for you to do that\u2026"),
       h("div", { class: "btns" }, h("button", { class: "primary", disabled: !done || st.step >= steps.length - 1, onclick: next }, "Next"), h("button", { onclick: next, disabled: st.step >= steps.length - 1 }, "Skip"), h("button", { onclick: () => {
         tell({ type: "hint" });
@@ -2436,6 +2459,7 @@ Ray`, fresh: true }],
     if (c !== st.clock) set({ ...st, clock: c });
     const s = current();
     if (s && !st.stepDone && s.done(st)) coach();
+    if (s?.arrive && st.arrived[s.arrive] === "waiting") arrive(s.arrive);
   }, 1e3);
   render2();
   arrive(steps[0].arrive);
