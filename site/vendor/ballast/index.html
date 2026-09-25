@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-mWN6BXO56/ScbB2tB7TVaZR7QAmwhxa/LbnqsbWXa0w='; style-src 'sha256-Q90MJz/2OtBLKahp93sMfOp082FYHwaIKnYqY0UiIIw='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-pbhgaqC579Gk9jdgrLuk4r3f0y/gv83LEPueX7Jd9NU='; style-src 'sha256-Q90MJz/2OtBLKahp93sMfOp082FYHwaIKnYqY0UiIIw='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast</title>
 <style>:root { --ink:#111; --bg:#fff; --mute:#666; --line:#ddd; --accent:#1d4ed8; --good:#15803d; --bad:#b91c1c; }
 * { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 Arial, sans-serif; -webkit-user-select:none; user-select:none }
@@ -513,7 +513,7 @@ ${until}`
     const saltBytes = unb64url(body.salt);
     const sid = await sidOf(saltBytes, pin);
     const wrap2 = body.clearances.find((w2) => w2.sid === sid);
-    if (!wrap2) throw new Error(`no clearance for CN ${pin} on this test`);
+    if (!wrap2) throw new Error(`no clearance for PIN ${pin} on this test`);
     const wk = await hkdfKey(await shared(train.priv, body.rtc), saltBytes, INFO.wrapIn(w));
     const { K } = await openJSON(wk, wrap2.box);
     const Kb = unb64url(K);
@@ -576,7 +576,7 @@ ${box}`);
       sig: crew.sig || null,
       signature: crew.sign ? await signBytes(crew.sign, signed(test.id, box)) : null
     };
-    return armor("RELEASE", body, { title: test.title, train: `CN ${pin}`, answered: Object.keys(attempt.answers || {}).length, finished: attempt.finished ? new Date(attempt.finished).toISOString() : "" });
+    return armor("RELEASE", body, { title: test.title, train: `Crew ${pin}`, answered: Object.keys(attempt.answers || {}).length, finished: attempt.finished ? new Date(attempt.finished).toISOString() : "" });
   };
   var checkRelease = async (body, sigPub = body.sig) => body.signature && sigPub ? verifyBytes(sigPub, body.signature, signed(body.test, body.box)) : null;
   var takeRelease = async (text2, rtc, record, sigPub) => {
@@ -619,7 +619,7 @@ ${box}`);
       signature: rtc.sign ? await signBytes(rtc.sign, signed2(record.id, release.hash, box)) : null,
       box
     };
-    return armor("CANCEL", body, { title: record.title, train: `CN ${pin}`, grade: `${Math.round(result.grade * 100)}%`, release: (release.hash || "").slice(0, 16) });
+    return armor("CANCEL", body, { title: record.title, train: `Crew ${pin}`, grade: `${Math.round(result.grade * 100)}%`, release: (release.hash || "").slice(0, 16) });
   };
   var readCancel = async (text2, train) => {
     const { body } = await dearmor(text2, "CANCEL");
@@ -976,7 +976,7 @@ ${box}`);
     "div",
     { class: "card row" },
     avatar(p, 72),
-    h("div", {}, h("b", {}, p.name), ` \xB7 ${p.role === "crew" ? "CN " : ""}${p.pin} \xB7 ${p.role === "none" ? "not yet minted" : p.role}`, p.minted ? h("div", { class: "small" }, `${p.role} since ${p.minted.start}, minted by ${p.minted.by.name}`) : null, h(
+    h("div", {}, h("b", {}, p.name), ` \xB7 ${p.role === "crew" ? "Crew " : ""}${p.pin} \xB7 ${p.role === "none" ? "not yet minted" : p.role}`, p.minted ? h("div", { class: "small" }, `${p.role} since ${p.minted.start}, minted by ${p.minted.by.name}`) : null, h(
       "div",
       { class: "row" },
       text2 ? h("button", { onclick: () => download(`profile-${p.pin}.txt`, text2) }, "Download profile") : null,
@@ -1010,7 +1010,7 @@ ${box}`);
       practiceBox(go4)
     );
   };
-  var clearanceSvg = (tgbo, p) => svgFor(`form clearance kind="Clearance" no=${tgbo.clearance} to="CN ${p.pin}" proceed="item 1 \u2192 item ${tgbo.order.length}" until="repeated back" call="before ${fmtTime(tgbo.settings.time)}" complete="${hhmm()}" rtc="${tgbo.rtcName || ""}"`);
+  var clearanceSvg = (tgbo, p) => svgFor(`form clearance kind="Clearance" no=${tgbo.clearance} to="Crew ${p.pin}" proceed="item 1 \u2192 item ${tgbo.order.length}" until="repeated back" call="before ${fmtTime(tgbo.settings.time)}" complete="${hhmm()}" rtc="${tgbo.rtcName || ""}"`);
   var renderCopy = async (root4, { text: text2, practice, source }, go4) => {
     const p = await me();
     if (!p) return mount(root4, h("h1", {}, "Not registered"), h("p", {}, "Register first; a test is addressed to your key."));
@@ -1052,7 +1052,7 @@ ${box}`);
         "div",
         { class: "card" },
         form2,
-        h("p", {}, `Clearance No. ${tgbo.clearance} to CN ${p.pin} \xB7 ${tgbo.order.length} items \xB7 ${fmtTime(tgbo.settings.time)} \xB7 pass ${Math.round(tgbo.settings.pass * 100)}%`),
+        h("p", {}, `Clearance No. ${tgbo.clearance} to Crew ${p.pin} \xB7 ${tgbo.order.length} items \xB7 ${fmtTime(tgbo.settings.time)} \xB7 pass ${Math.round(tgbo.settings.pass * 100)}%`),
         tgbo.window ? h("p", { class: "small" }, `Window: ${new Date(tgbo.window.from).toLocaleString()} \u2192 ${new Date(tgbo.window.until).toLocaleString()}. Outside it the clearance does not open, and a late release is flagged to the RTC.`) : null,
         h("p", {}, "Rule 136 \u2014 copy as transmitted, then repeat back:"),
         h("p", { class: "complete" }, `Complete ${hhmm()} \xB7 RTC ${tgbo.rtcName || ""} \xB7 `, h("b", {}, tgbo.complete)),
@@ -1103,7 +1103,7 @@ ${box}`);
     const status = h("p", { class: "status" });
     const answerBox = h("textarea", { rows: 4, placeholder: "Your answer", style: { display: "none" } });
     let item = null, hits = [], pick = null, images = [];
-    const watermark = `CN ${p.pin} ${p.name} ${hhmm()}`;
+    const watermark = `Crew ${p.pin} ${p.name} ${hhmm()}`;
     const deadline = () => (state().started || now()) + tgbo.settings.time * 1e3;
     const tick = () => {
       const left = Math.max(0, Math.ceil((deadline() - now()) / 1e3));
@@ -1254,7 +1254,7 @@ ${box}`);
     };
     mount(
       root4,
-      h("div", { class: "bar" }, h("span", {}, tgbo.title), timer, h("span", { class: "row" }, avatar(p, 28), ` CN ${p.pin}`)),
+      h("div", { class: "bar" }, h("span", {}, tgbo.title), timer, h("span", { class: "row" }, avatar(p, 28), ` Crew ${p.pin}`)),
       h("div", { class: "work" }, canvas, answerBox, h("div", { class: "row" }, tgbo.settings.allowBack ? h("button", { onclick: prev }, "\u2190 Back") : null, h("button", { onclick: next }, "Next \u2192"), h("button", { class: "primary", onclick: () => submit("done") }, "Release track"), status)),
       guard
     );
@@ -1418,10 +1418,10 @@ ${approval.hash}`));
             continue;
           }
           const i = sheet.trains.findIndex((t) => t.pin === p.pin);
-          if (i >= 0 && sheet.trains[i].pub !== p.pub) note(`CN ${p.pin} re-registered with a new key (${p.name}); replaced`, true);
+          if (i >= 0 && sheet.trains[i].pub !== p.pub) note(`Crew ${p.pin} re-registered with a new key (${p.name}); replaced`, true);
           if (i >= 0) sheet.trains[i] = p;
           else sheet.trains.push(p);
-          note(`crew CN ${p.pin} ${p.name}`);
+          note(`crew Crew ${p.pin} ${p.name}`);
           tab = "trains";
         } else if (kind === "APPROVAL") {
           const a = await readApproval(it.text);
@@ -1439,7 +1439,7 @@ ${approval.hash}`));
           const identity = onSheet && onSheet.pub === r.train ? r.signed === false ? "BAD SIGNATURE" : "ok" : "KEY MISMATCH";
           sheet.releases = sheet.releases.filter((x) => !(x.test === rec.id && x.pin === r.pin));
           sheet.releases.push({ test: rec.id, pin: r.pin, train: r.train, identity, attempt: r.attempt, name: onSheet?.name || "?", hash: r.hash, signed: r.signed, late: r.late });
-          note(`release CN ${r.pin} for ${rec.title} \xB7 ${r.hash.slice(0, 12)}${identity !== "ok" ? " \u2014 " + identity : ""}${r.late ? " \u2014 LATE (after the window)" : ""}`, identity !== "ok" || r.late);
+          note(`release Crew ${r.pin} for ${rec.title} \xB7 ${r.hash.slice(0, 12)}${identity !== "ok" ? " \u2014 " + identity : ""}${r.late ? " \u2014 LATE (after the window)" : ""}`, identity !== "ok" || r.late);
           tab = "releases";
         } else if (kind) note(`${it.name}: a ${kind} does not belong on the desk`, true);
         else note(`${it.name}: not recognised`, true);
@@ -1465,8 +1465,8 @@ ${approval.hash}`));
     sheet.pending = sheet.pending.filter((x) => x !== reg);
     sheet.trains = sheet.trains.filter((t) => t.pin !== m.pin);
     sheet.trains.push(m);
-    download(`profile-CN${m.pin}.txt`, await profileText(m));
-    note(`minted crew CN ${m.pin} ${m.name} \u2014 send them the profile`);
+    download(`profile-crew-${m.pin}.txt`, await profileText(m));
+    note(`minted crew Crew ${m.pin} ${m.name} \u2014 send them the profile`);
     rerender();
   };
   var classOf = (pin) => sheet.classes.find((c) => c.pins.includes(pin));
@@ -1522,7 +1522,7 @@ ${approval.hash}`));
         "tr",
         {},
         h("td", {}, avatar(t, 48)),
-        h("td", {}, h("b", {}, t.name), h("br"), `CN ${t.pin}`, h("div", { class: "small" }, `since ${t.minted?.start || "?"}`)),
+        h("td", {}, h("b", {}, t.name), h("br"), `Crew ${t.pin}`, h("div", { class: "small" }, `since ${t.minted?.start || "?"}`)),
         h("td", {}, h("select", { onchange: (e) => {
           for (const c2 of sheet.classes) c2.pins = c2.pins.filter((p) => p !== t.pin);
           const c = sheet.classes.find((x) => x.id === e.target.value);
@@ -1632,7 +1632,7 @@ ${approval.hash}`));
           "tr",
           {},
           h("td", {}, photo(r.pin)),
-          h("td", {}, `CN ${r.pin}`),
+          h("td", {}, `Crew ${r.pin}`),
           h("td", {}, r.name),
           h("td", {}, `${s.score}/${s.total}${s.pending ? ` (+${s.pending} unmarked)` : ""}`),
           h("td", { class: s.pass ? "good" : "bad" }, `${Math.round(s.grade * 100)}%`),
@@ -1642,14 +1642,14 @@ ${approval.hash}`));
           h("td", {}, h("button", { onclick: () => {
             view = { rec, test, r };
             rerender();
-          } }, "review"), " ", h("button", { onclick: async () => download(`cancel-CN${r.pin}.txt`, await cancel(rec, r, s)) }, "cancel (send marks)"))
+          } }, "review"), " ", h("button", { onclick: async () => download(`cancel-${r.pin}.txt`, await cancel(rec, r, s)) }, "cancel (send marks)"))
         ))
       ),
       h(
         "div",
         { class: "row" },
         h("button", { onclick: async () => {
-          for (const { r, s } of scored) download(`cancel-CN${r.pin}.txt`, await cancel(rec, r, s));
+          for (const { r, s } of scored) download(`cancel-${r.pin}.txt`, await cancel(rec, r, s));
         } }, "Cancel all"),
         h("button", { onclick: () => download(`${rec.title.replace(/\W+/g, "-")}-summary.csv`, csv(test, scored)) }, "Summary CSV"),
         sheet.superintendent ? h("button", { onclick: async () => download(`class-profile-${rec.title.replace(/\W+/g, "-")}.txt`, await sendReport(sheet.rtc, sheet.superintendent.pub, reportFor(rec, test, scored, sum))) }, `Class profile to ${sheet.superintendent.name}`) : h("span", { class: "small" }, "Drop the superintendent's profile on the desk to send reports.")
@@ -1739,7 +1739,7 @@ ${approval.hash}`));
         view = null;
         rerender();
       } }, "\u2190 back"),
-      h("div", { class: "row" }, avatar(crewRow || { name: "?" }, 56), h("h2", {}, `CN ${r.pin} ${r.name} \u2014 ${rec.title}: ${s.score}/${s.total} (${Math.round(s.grade * 100)}%)`)),
+      h("div", { class: "row" }, avatar(crewRow || { name: "?" }, 56), h("h2", {}, `Crew ${r.pin} ${r.name} \u2014 ${rec.title}: ${s.score}/${s.total} (${Math.round(s.grade * 100)}%)`)),
       crewRow ? h("div", { class: "card" }, h("b", {}, "Rating & appraisal"), noteBox(crewRow)) : null,
       h("h2", {}, "Answers"),
       h("table", {}, test.items.map((it) => {
@@ -1908,7 +1908,7 @@ ${approval.hash}`));
     book.audits ?? (book.audits = []);
     book.audits = book.audits.filter((x) => x.hash !== a.hash);
     book.audits.push({ hash: a.hash, pin: a.pin, title: src.title, signed: a.signed, when: Date.now(), score: s.score, total: s.total, pending: s.pending, reported: reported ? { grade: reported.grade, score: reported.score, total: reported.total, rtc: reported.rtc, name: reported.name } : null, agrees, items: s.perItem.map((i) => ({ id: i.id, got: i.got, worth: i.worth, pending: i.pending, reported: reported?.marks?.find(([id]) => id === i.id)?.[1] ?? null })) });
-    note2(`audit ${a.hash.slice(0, 12)} CN ${a.pin}: re-scored ${s.score}/${s.total}${s.pending ? ` (+${s.pending} short answers unmarked here)` : ""}${reported ? ` \xB7 RTC ${reported.rtc} reported ${reported.score}/${reported.total} \u2014 ${agrees ? "AGREES" : "DIFFERS"}` : " \xB7 no class profile names this release"}`, agrees === false);
+    note2(`audit ${a.hash.slice(0, 12)} Crew ${a.pin}: re-scored ${s.score}/${s.total}${s.pending ? ` (+${s.pending} short answers unmarked here)` : ""}${reported ? ` \xB7 RTC ${reported.rtc} reported ${reported.score}/${reported.total} \u2014 ${agrees ? "AGREES" : "DIFFERS"}` : " \xB7 no class profile names this release"}`, agrees === false);
   };
   var takeFiles2 = async (files) => {
     const items = [];
@@ -2010,7 +2010,7 @@ ${approval.hash}`));
         "table",
         {},
         h("tr", {}, h("th", {}, "Crew"), h("th", {}, "Grade"), h("th", {}, "Strong"), h("th", {}, "Weak"), h("th", {}, "Read"), h("th", {}, "RTC rating"), h("th", {}, "RTC appraisal"), h("th", {}, "Release")),
-        r.rows.map((row) => h("tr", {}, h("td", {}, h("b", {}, row.name), h("br"), `CN ${row.pin}`), h("td", { class: row.pass ? "good" : "bad" }, `${Math.round(row.grade * 100)}%`), h("td", { class: "small" }, (row.strengths || []).join(", ") || "\u2014"), h("td", { class: "small" }, (row.weaknesses || []).join(", ") || "\u2014"), h("td", { class: "small" }, (row.read || []).slice(0, 4).map((z) => z.ref).join(", ")), h("td", {}, row.rating ? "\u2605".repeat(row.rating) : "\u2014"), h("td", { class: "small", style: { maxWidth: "320px" } }, row.note || "\u2014"), h("td", { class: "complete small" }, (row.release || "").slice(0, 12), row.signed === false ? " unsigned!" : "", row.late ? " late" : "")))
+        r.rows.map((row) => h("tr", {}, h("td", {}, h("b", {}, row.name), h("br"), `Crew ${row.pin}`), h("td", { class: row.pass ? "good" : "bad" }, `${Math.round(row.grade * 100)}%`), h("td", { class: "small" }, (row.strengths || []).join(", ") || "\u2014"), h("td", { class: "small" }, (row.weaknesses || []).join(", ") || "\u2014"), h("td", { class: "small" }, (row.read || []).slice(0, 4).map((z) => z.ref).join(", ")), h("td", {}, row.rating ? "\u2605".repeat(row.rating) : "\u2014"), h("td", { class: "small", style: { maxWidth: "320px" } }, row.note || "\u2014"), h("td", { class: "complete small" }, (row.release || "").slice(0, 12), row.signed === false ? " unsigned!" : "", row.late ? " late" : "")))
       )
     );
   };
@@ -2039,7 +2039,7 @@ ${approval.hash}`));
         reps.length ? null : h("tr", {}, h("td", { class: "status" }, "Drop report files from RTCs here."))
       ),
       h("h2", {}, "By crew member"),
-      h("table", {}, Object.entries(byPin).sort().map(([pin, v]) => h("tr", {}, h("td", {}, `CN ${pin}`), h("td", {}, v.name), h("td", {}, v.rows.map((r) => h("div", { class: r.pass ? "good small" : "bad small" }, `${r.title}: ${Math.round(r.grade * 100)}% (${r.rtc})${r.rating ? " " + "\u2605".repeat(r.rating) : ""}${r.weak?.length ? " \xB7 weak: " + r.weak.join(", ") : ""}`)))))),
+      h("table", {}, Object.entries(byPin).sort().map(([pin, v]) => h("tr", {}, h("td", {}, `Crew ${pin}`), h("td", {}, v.name), h("td", {}, v.rows.map((r) => h("div", { class: r.pass ? "good small" : "bad small" }, `${r.title}: ${Math.round(r.grade * 100)}% (${r.rtc})${r.rating ? " " + "\u2605".repeat(r.rating) : ""}${r.weak?.length ? " \xB7 weak: " + r.weak.join(", ") : ""}`)))))),
       reps.length ? h("button", { onclick: () => download("administrations.csv", csvAll()) }, "All rows as CSV") : null,
       h("h2", {}, "Audits"),
       h("p", { class: "small" }, "A crew member who doubts their marks sends you their release file. Drop it here: it carries a copy sealed to you, and you re-score it from the approved source in the inventory and compare with what the RTC reported for that release hash."),
@@ -2047,7 +2047,7 @@ ${approval.hash}`));
         "table",
         {},
         h("tr", {}, h("th", {}, "Release"), h("th", {}, "Crew"), h("th", {}, "Test"), h("th", {}, "Re-scored"), h("th", {}, "RTC reported"), h("th", {}, "Compare")),
-        book.audits.map((a) => h("tr", {}, h("td", { class: "complete small" }, a.hash.slice(0, 16), a.signed === false ? h("span", { class: "bad" }, " bad signature") : ""), h("td", {}, `CN ${a.pin}`), h("td", {}, a.title), h("td", {}, `${a.score}/${a.total}${a.pending ? ` (+${a.pending} short)` : ""}`), h("td", {}, a.reported ? `${a.reported.score}/${a.reported.total} (${a.reported.rtc})` : "\u2014"), h("td", { class: a.agrees === true ? "good" : a.agrees === false ? "bad" : "small" }, a.agrees === true ? "agrees" : a.agrees === false ? "DIFFERS" : "no report names it")))
+        book.audits.map((a) => h("tr", {}, h("td", { class: "complete small" }, a.hash.slice(0, 16), a.signed === false ? h("span", { class: "bad" }, " bad signature") : ""), h("td", {}, `Crew ${a.pin}`), h("td", {}, a.title), h("td", {}, `${a.score}/${a.total}${a.pending ? ` (+${a.pending} short)` : ""}`), h("td", {}, a.reported ? `${a.reported.score}/${a.reported.total} (${a.reported.rtc})` : "\u2014"), h("td", { class: a.agrees === true ? "good" : a.agrees === false ? "bad" : "small" }, a.agrees === true ? "agrees" : a.agrees === false ? "DIFFERS" : "no report names it")))
       ) : null
     );
   };

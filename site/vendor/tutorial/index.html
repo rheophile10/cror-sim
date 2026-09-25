@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Zu7GPwTKtRm55aLegcpLO3StRQ3+AXNOFIKGVVU3wlk='; style-src 'sha256-9zB5hZ5Q2lUsB6AzomEWTqEAGuj7M/LkgN+IZ8Tcrm8='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Q6Yt648gR/2HOMRdCpOj//XpZ1TKcSi4H1LT2WURJ5o='; style-src 'sha256-lSO51X03vuL4I8XY1cyFiTe8lHVk1OqpTwhJtVcpAkM='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast tutorial</title>
 <style>* { box-sizing:border-box } html, body { margin:0; height:100%; font:14px/1.4 "Segoe UI", Arial, sans-serif; overflow:hidden; background:#0b3d5c }
 .desk { position:absolute; inset:0; background:radial-gradient(ellipse at 30% 20%, #1e6a8f 0%, #0b3d5c 55%, #072a40 100%); overflow:hidden }
@@ -17,6 +17,7 @@
 .pane { flex:1; overflow:auto } .cols, .file { display:grid; grid-template-columns:1fr 160px 110px; padding:5px 12px; align-items:center } .cols { color:#888; font-size:12px; border-bottom:1px solid #eee; position:sticky; top:0; background:#fff }
 .file { cursor:default; user-select:none } .file:hover { background:#f3f6ff } .file.sel { background:#cfe0ff } .file.fresh > span:first-child { font-weight:700 } .empty { padding:30px; color:#999; text-align:center } .small { font-size:12px; color:#666 }
 .status { border-top:1px solid #eee; padding:4px 10px; font-size:12px; color:#666; display:flex; justify-content:space-between; align-items:center } .openwith { font:inherit; padding:3px 10px; border:1px solid #9ab; background:#eef; border-radius:4px; cursor:pointer }
+pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Consolas, 'Courier New', monospace; white-space:pre-wrap; background:#fff }
 .browser { display:flex; flex-direction:column; flex:1; min-height:0; background:#dee1e6 } .tabs { display:flex; align-items:flex-end; gap:4px; padding:6px 8px 0 } .tab { background:#fff; border-radius:8px 8px 0 0; padding:6px 14px; font-size:13px } .newtab { border:none; background:none; font-size:16px; cursor:pointer; padding:2px 8px }
 .urlbar { display:flex; gap:8px; align-items:center; background:#fff; padding:6px 10px; border-bottom:1px solid #ccc } .urlbar input { flex:1; border:1px solid #ddd; border-radius:14px; padding:4px 10px; background:#f1f3f4; font:inherit }
 #frames iframe.app { position:fixed; border:none; background:#fff; display:none } .appslot { flex:1; background:#fff }
@@ -223,13 +224,13 @@ ${by.sig}`;
 
   // tutorial/src/os.js
   var FOLDERS = ["Ballast", "Inbox", "Registrations", "Tests", "Releases", "Class profiles", "Outbox"];
-  var initial = () => ({ windows: [], files: [{ id: "ballast", folder: "Ballast", name: "ballast.html", text: "", from: "IT (saved from cror.ca/ballast)", at: Date.now() - 864e5 * 30, fresh: false }], cwd: "Ballast", z: 1, sel: null, toast: null, clock: "" });
+  var initial = (why = "") => ({ windows: [], files: [{ id: "ballast", folder: "Ballast", name: "ballast.html", text: "", from: "IT (saved from cror.ca/ballast)", at: Date.now() - 864e5 * 30, fresh: false }, { id: "why", folder: "Ballast", name: "Why Ballast.txt", text: why, from: "IT", at: Date.now() - 864e5 * 30, fresh: false, note: true }], cwd: "Ballast", z: 1, sel: null, toast: null, clock: "" });
   var id = () => Math.random().toString(36).slice(2, 8);
   var openWindow = (s, kind, title, extra = {}) => {
     const existing = s.windows.find((w2) => w2.kind === kind);
     if (existing) return focus(s, existing.id);
     const n = s.windows.length;
-    const w = { id: id(), kind, title, x: 60 + n * 30, y: 40 + n * 24, w: kind === "browser" ? 980 : 720, h: kind === "browser" ? 700 : 460, z: s.z + 1, min: false, ...extra };
+    const w = { id: id(), kind, title, x: 60 + n * 30, y: 40 + n * 24, w: kind === "browser" ? 980 : kind === "notepad" ? 640 : 720, h: kind === "browser" ? 700 : kind === "notepad" ? 560 : 460, z: s.z + 1, min: false, ...extra };
     return { ...s, windows: [...s.windows, w], z: s.z + 1 };
   };
   var setUrl = (s, wid, url, title) => ({ ...s, windows: s.windows.map((w) => w.id === wid ? { ...w, url, title } : w) });
@@ -255,7 +256,8 @@ ${by.sig}`;
         "div",
         { class: "icons" },
         h("button", { class: "dicon", ondblclick: () => act2("open-explorer") }, "\u{1F5C4}\uFE0F", h("span", {}, "Shared drive")),
-        h("button", { class: "dicon", ondblclick: () => act2("open-browser") }, "\u{1F310}", h("span", {}, "Browser"))
+        h("button", { class: "dicon", ondblclick: () => act2("open-browser") }, "\u{1F310}", h("span", {}, "Browser")),
+        h("button", { class: "dicon", ondblclick: () => act2("open-file", "why") }, "\u{1F4DD}", h("span", {}, "Why Ballast.txt"))
       ),
       ...s.windows.filter((w) => !w.min).sort((a, b) => a.z - b.z).map((w) => win(w, s, act2)),
       s.toast ? h("div", { class: "toast" }, s.toast) : null,
@@ -263,7 +265,7 @@ ${by.sig}`;
         "div",
         { class: "taskbar" },
         h("button", { class: "start", onclick: () => act2("open-explorer") }, "\u229E"),
-        s.windows.map((w) => h("button", { class: "task", onclick: () => act2("focus", w.id) }, w.kind === "browser" ? "\u{1F310} " : "\u{1F5C4}\uFE0F ", w.title)),
+        s.windows.map((w) => h("button", { class: "task", onclick: () => act2("focus", w.id) }, w.kind === "browser" ? "\u{1F310} " : w.kind === "notepad" ? "\u{1F4DD} " : "\u{1F5C4}\uFE0F ", w.title)),
         h("span", { class: "clock" }, s.clock)
       )
     );
@@ -284,10 +286,10 @@ ${by.sig}`;
         window.addEventListener("pointermove", mv);
         window.addEventListener("pointerup", up);
       } },
-      h("span", {}, w.kind === "browser" ? "\u{1F310} " : "\u{1F5C4}\uFE0F ", w.title),
+      h("span", {}, w.kind === "browser" ? "\u{1F310} " : w.kind === "notepad" ? "\u{1F4DD} " : "\u{1F5C4}\uFE0F ", w.title),
       h("span", { class: "winbtns" }, h("button", { onclick: () => act2("minimize", w.id) }, "\u2013"), h("button", { onclick: () => act2("close", w.id) }, "\u2715"))
     );
-    const body = w.kind === "explorer" ? explorer(s, act2) : browser(w, s, act2);
+    const body = w.kind === "explorer" ? explorer(s, act2) : w.kind === "notepad" ? h("pre", { class: "note" }, w.text) : browser(w, s, act2);
     return h("div", { class: "win " + w.kind, style: { left: w.x + "px", top: w.y + "px", width: w.w + "px", height: w.h + "px", zIndex: w.z }, onclick: () => act2("focus", w.id) }, bar, body);
   };
   var explorer = (s, act2) => {
@@ -295,7 +297,7 @@ ${by.sig}`;
     return h(
       "div",
       { class: "explorer" },
-      h("div", { class: "addr" }, "\u{1F5C4}\uFE0F ", h("span", { class: "crumb" }, "\\\\CN-TRAINING\\Training"), " \u203A ", h("span", { class: "crumb" }, s.cwd)),
+      h("div", { class: "addr" }, "\u{1F5C4}\uFE0F ", h("span", { class: "crumb" }, "\\\\WNR-TRAINING\\Training"), " \u203A ", h("span", { class: "crumb" }, s.cwd)),
       h(
         "div",
         { class: "panes" },
@@ -305,7 +307,7 @@ ${by.sig}`;
           h("div", { class: "treehead" }, "This PC"),
           h("div", { class: "treeitem" }, "\u{1F4BB} Desktop"),
           h("div", { class: "treehead" }, "Network"),
-          h("div", { class: "treeitem" }, "\u{1F5C4}\uFE0F CN-TRAINING"),
+          h("div", { class: "treeitem" }, "\u{1F5C4}\uFE0F WNR-TRAINING"),
           FOLDERS.map((f) => {
             const n = s.files.filter((x) => x.folder === f && x.fresh).length;
             return h("div", { class: "treeitem sub" + (s.cwd === f ? " on" : ""), onclick: () => act2("cd", f) }, "\u{1F4C1} ", f, n ? h("span", { class: "badge" }, n) : null);
@@ -319,7 +321,7 @@ ${by.sig}`;
           files.length ? files.map((f) => h("div", { class: "file" + (s.sel === f.id ? " sel" : "") + (f.fresh ? " fresh" : ""), onclick: (e) => act2(e.detail >= 2 ? "open-file" : "select", f.id) }, h("span", {}, ICON[ext(f.name)] || "\u{1F4C4}", " ", f.name), h("span", { class: "small" }, f.from), h("span", { class: "small" }, new Date(f.at).toLocaleTimeString()))) : h("div", { class: "empty" }, "This folder is empty.")
         )
       ),
-      h("div", { class: "status" }, `${files.length} item(s)`, s.sel ? h("button", { class: "openwith", onclick: () => act2("open-file", s.sel) }, /\.html$/.test(s.files.find((f) => f.id === s.sel)?.name || "") ? "Open" : "Open with Ballast") : null)
+      h("div", { class: "status" }, `${files.length} item(s)`, s.sel ? h("button", { class: "openwith", onclick: () => act2("open-file", s.sel) }, /\.html$/.test(s.files.find((f) => f.id === s.sel)?.name || "") || s.files.find((f) => f.id === s.sel)?.note ? "Open" : "Open with Ballast") : null)
     );
   };
   var frames = /* @__PURE__ */ new Map();
@@ -373,19 +375,10 @@ ${by.sig}`;
       "Ballast borrows its words from the CROR. The superintendent is the program director: approves tests, reads class profiles, settles appeals. The RTC (rail traffic controller) is the teacher: mints crew, issues tests, marks, files class profiles. Crew are the students. A test is issued to a class the way a clearance is issued to a train \u2014 one file, a clearance for each person, repeated back before it takes effect \u2014 and a finished attempt is a release. The marks come back as a cancellation. The RTC's working file is a sheet; the superintendent's is a book.",
       "It is admittedly a bit silly, and it may go away later. Until then, the mapping is the only thing you need to hold in your head."
     ].join("\n\n")),
-    info("superintendent", "Built for function", [
-      "Ballast is one HTML file. No server, no accounts, no installer, no database, no framework, nothing downloaded at run time. The browser you already have does the cryptography (WebCrypto: AES-256-GCM, P-256, SHA-256, HKDF, PBKDF2 \u2014 the same primitives as TLS).",
-      "The network is the files. Everything that moves \u2014 registrations, tests, releases, cancellations, class profiles \u2014 is a small text file, and it moves however your files already move: a shared drive, an email attachment, a Teams message, a USB stick, paper.",
-      "That is why it will still work in thirty years. Browsers do not remove JavaScript features or WebCrypto algorithms; there is no dependency to rot, no service to shut down, no update channel to break it. And the file formats are documented well enough that verify.py re-scores a release in Python with no browser at all."
-    ].join("\n\n")),
+    { phase: "superintendent", title: "Why Ballast", text: 'Free. Simple. Serverless. Permissionless. No external dependencies. Runnable in 30 years \u2014 it should outlast some rails.\n\nOne HTML file; the browser you already have does the cryptography; the files are the network. The long form is on the desktop: open "Why Ballast.txt".', done: (st2) => st2.windows.some((w) => w.kind === "notepad") },
     info("superintendent", "What an armored text file is", [
       'Every Ballast file looks like this: a line "-----BEGIN BALLAST TEST-----", a few readable headers (title, who, when, a sha256), a blank line, then the body as base64 letters and digits, then "-----END BALLAST TEST-----". PGP has used the same idea since 1991.',
-      "The body is JSON \u2014 signed, and encrypted where it must be \u2014 but the envelope is plain text. It survives email, copy-and-paste, Teams, a shared drive, a printout. The sha256 header catches any mangling. IT can read every header without opening anything.",
-      'And it is inert: a .txt file cannot run. Nothing in Ballast executes anything from a file \u2014 the text is parsed as data, drawn as text, never evaluated. That is the honest answer to "can malware hide in a .txt?": bytes can hide anywhere, but they cannot run from a text file, and Ballast gives them nowhere to run.'
-    ].join("\n\n")),
-    info("superintendent", "Low-permission IT", [
-      "Because there is no server, there is nothing to install and nothing to open on the network. Ballast runs from a shared drive, from a page on cror.ca, or from a file on a desktop, with no administrator rights and no exception from IT.",
-      "What IT sees is what it already allows: text files moving by email, chat and shared folders. A .txt cannot carry an executable, mail filters pass it, and a data-loss policy can read its headers."
+      "The body is JSON \u2014 signed, and encrypted where it must be \u2014 but the envelope is plain text: it survives email, copy-and-paste, Teams, a shared drive, a printout, and the sha256 header catches any mangling. It is inert: a .txt cannot run, and Ballast never executes what it reads \u2014 text is parsed as data and drawn as text. Bytes can hide anywhere; they cannot run from here."
     ].join("\n\n")),
     { phase: "superintendent", title: "Register", text: "Everyone starts the same way. Register with a name, a PIN (any 6 digits) and, if you like, a photo. Ballast keeps your keys in this browser.", hint: ["form.card button[type=submit]", "Fill in name and PIN, then Register."], done: (st2) => st2.ballast.pub && st2.ballast.role !== void 0 && st2.ballast.screen && st2.ballast.role === "none" },
     { phase: "superintendent", title: "The first superintendent mints themself", text: 'Roles are granted by signature. Nobody is above the first superintendent, so they mint their own. Open "Nobody to mint me" and start as superintendent.', hint: ["details summary", "Open this and click Start as superintendent."], done: (st2) => st2.ballast.role === "superintendent" },
@@ -405,7 +398,7 @@ ${by.sig}`;
     { phase: "superintendent", title: "Save the book, then step down", text: "Save your book (any passphrase). Then you will be demoted: the real superintendent, Marguerite Boudreau, has minted your registration as an RTC. Her profile for you is in Inbox \u2014 open it with Ballast and accept the new role.", arrive: "demoteToRtc", explorer: "Inbox", done: (st2) => st2.ballast.role === "rtc" },
     // ---------- rtc
     { phase: "rtc", title: "You are an RTC", text: 'Start a sheet \u2014 your desk, under a passphrase. Then make a class: Crew tab, New class, call it "Block C".', hint: ["button.primary", "Start a sheet."], done: (st2) => st2.ballast.screen === "desk" },
-    { phase: "rtc", title: "Registrations from crew", text: "Four crew members registered and sent their registrations to you. Open them from Inbox, then mint each one on the Crew tab and put them in your class.", arrive: "crewRegistrations", explorer: "Inbox", done: (st2) => st2.files.filter((f) => f.folder === "Outbox" && /^profile-CN/.test(f.name)).length >= 4 },
+    { phase: "rtc", title: "Registrations from crew", text: "Four crew members registered and sent their registrations to you. Open them from Inbox, then mint each one on the Crew tab and put them in your class.", arrive: "crewRegistrations", explorer: "Inbox", done: (st2) => st2.files.filter((f) => f.folder === "Outbox" && /^profile-crew-\d/.test(f.name)).length >= 4 },
     { phase: "rtc", title: "A test from the superintendent", text: "Test 2 arrived in Tests with its approval. Open both with Ballast. On Tests, set the window \u2014 when the clearance opens and closes; outside it the file will not decrypt \u2014 choose your class and Issue. One file goes to the whole class, with a clearance for each person. It lands in Outbox.", arrive: "testForClass", explorer: "Tests", done: (st2) => exported(st2, /\.test\.txt$/) },
     { phase: "rtc", title: "Releases come back", text: "Your four crew wrote the test and released. Their releases are in Releases \u2014 open each with Ballast, then on Releases click Score. Each row shows the release hash and whether the crew member's signature checks.", arrive: "releases", explorer: "Releases", done: (st2) => st2.releasesSeen >= 4 },
     info("rtc", "Mark, rate, appraise", "One item is a short answer: open review for each person and mark it. On the Crew tab, give each person a rating and write an appraisal. Write what you actually observed; the superintendent will read it beside the numbers.", { hint: [".tabs button:nth-child(1)", "Crew tab: rating and appraisal per person."] }),
@@ -429,8 +422,8 @@ ${by.sig}`;
       role: "superintendent",
       name: "Marguerite Boudreau",
       pin: "900011",
-      pub: "BNXPRgxqmb4v-F-Q3dqky1vUxsquHIrYSIFOFATGrXuKzWlW8Azkw_XA4K-rS-ymSgJ5GYS9Ba7gHF-MqNYS7-s",
-      sig: "BK_q1vztEWxVkWObb6DMQZxOacx0LEEMlDQNph2Rxu4jODK0e_LR-ElM9WUz5NzfG-ReHcXjnGui5PHnD275K8o",
+      pub: "BLqqIDE35xx-AXmeh9aG-c_lOBnSWOmI4bQZJx1EWJ5wpHgItKurvf7U8MrROZvx_bRRchkSNQi3jzz-zVQ4GvM",
+      sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
       photo: "",
       minted: {
         role: "superintendent",
@@ -438,10 +431,10 @@ ${by.sig}`;
         by: {
           name: "Marguerite Boudreau",
           pin: "900011",
-          sig: "BK_q1vztEWxVkWObb6DMQZxOacx0LEEMlDQNph2Rxu4jODK0e_LR-ElM9WUz5NzfG-ReHcXjnGui5PHnD275K8o",
+          sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
           role: "superintendent"
         },
-        signature: "X3Y7AllDm7Yr_jKQbDEYx7PmQBjzCqsAIghA0bGVV6BsMiC1YLjXKHpZBQIkbKUKaM9u3EbDiPxErzC1Fa-lkg"
+        signature: "w2jBSsIiOSqA1xEGjVebrFmMUym3UcQ5HMUOJP3w1m4eDfVZHYhklYgcmo1jZNGO3IzkssO5jCY5kqYV4BhEFw"
       },
       keys: {
         priv: {
@@ -450,10 +443,10 @@ ${by.sig}`;
           ],
           ext: true,
           kty: "EC",
-          x: "1c9GDGqZvi_4X5Dd2qTLW9TGyq4cithIgU4UBMate4o",
-          y: "zWlW8Azkw_XA4K-rS-ymSgJ5GYS9Ba7gHF-MqNYS7-s",
+          x: "uqogMTfnHH4BeZ6H1ob5z-U4GdJY6YjhtBknHURYnnA",
+          y: "pHgItKurvf7U8MrROZvx_bRRchkSNQi3jzz-zVQ4GvM",
           crv: "P-256",
-          d: "NMKHiR1OaiHBXzlkfb-ueTRN9pXyG88AQagEONFachM"
+          d: "oJ4YxxWdCWCCcjpEZqH8nuB4TcOz3qmkJotfClH8SJQ"
         },
         sign: {
           key_ops: [
@@ -461,10 +454,10 @@ ${by.sig}`;
           ],
           ext: true,
           kty: "EC",
-          x: "r-rW_O0RbFWRY5tvoMxBnE5pzHQsQQyUNA2mHZHG7iM",
-          y: "ODK0e_LR-ElM9WUz5NzfG-ReHcXjnGui5PHnD275K8o",
+          x: "ZewSsUasww2TYi330sgPPai4JQemaxmD__uHC5kthlI",
+          y: "w6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
           crv: "P-256",
-          d: "wfTdekLutypQ-XIhVppSWIBM3wfJeLInkJ9Ozr7F5qM"
+          d: "yk1dzzcVyg8CneP-Z2_f07Zyt9onA0SlgfANXQn9V0Y"
         }
       }
     },
@@ -473,8 +466,8 @@ ${by.sig}`;
         role: "rtc",
         name: "Denise Okafor",
         pin: "710021",
-        pub: "BDDndPhYYV2HVgBEWHam-rE7tM65d5XSrX260mHkQvLko3a718I9ODXspG5gMs18E8mnsyLtuaNmS7mkKlgDzpE",
-        sig: "BHvHsZJXhferetyBduKnIDDFcNu2MpGOOjWStRpVvZEB3b2LmFk6O3Qi4KtjQMy4o4yukZ3n-vpWxe-9QyqKwdY",
+        pub: "BBksW8HsH8WkXwKcXyX2kqtz3-76r4bQgZI-P6erp1s4JSwNkF_PrwQGdP0ylhi8WRXyZFqdInkccicE1rfTfu0",
+        sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
         photo: "",
         minted: {
           role: "rtc",
@@ -482,10 +475,10 @@ ${by.sig}`;
           by: {
             name: "Marguerite Boudreau",
             pin: "900011",
-            sig: "BK_q1vztEWxVkWObb6DMQZxOacx0LEEMlDQNph2Rxu4jODK0e_LR-ElM9WUz5NzfG-ReHcXjnGui5PHnD275K8o",
+            sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
             role: "superintendent"
           },
-          signature: "cGfujQP_ngudzL8S81qBffEkfBAI8hcFFgGT-yGae86b605ejRxpslDFSBeXgFeyWkqh5kvgEISsp14j3iRLVQ"
+          signature: "2JtaA27zm5hz8xT6eo4f59cPqxIEcuCN11Do3BSMFThJknRsd1Ble9mFd6D4SLuP2OPAYvJQE2RUeoC1XviQ6w"
         },
         keys: {
           priv: {
@@ -494,10 +487,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "MOd0-FhhXYdWAERYdqb6sTu0zrl3ldKtfbrSYeRC8uQ",
-            y: "o3a718I9ODXspG5gMs18E8mnsyLtuaNmS7mkKlgDzpE",
+            x: "GSxbwewfxaRfApxfJfaSq3Pf7vqvhtCBkj4_p6unWzg",
+            y: "JSwNkF_PrwQGdP0ylhi8WRXyZFqdInkccicE1rfTfu0",
             crv: "P-256",
-            d: "X2U1R2IZTID8PtOK3Cv8cK-RgZPre3SOimymAtav7o8"
+            d: "24qqqAjzgYy2fpGkf52_4Itv-ntCGvrRnX-3l4RsSBE"
           },
           sign: {
             key_ops: [
@@ -505,10 +498,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "e8exkleF96t63IF24qcgMMVw27YykY46NZK1GlW9kQE",
-            y: "3b2LmFk6O3Qi4KtjQMy4o4yukZ3n-vpWxe-9QyqKwdY",
+            x: "4k8Jo7CJinL_x6Oibw7osPFXLx17ON_K8UWd0FsVZpc",
+            y: "Nar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
             crv: "P-256",
-            d: "DfZZw-Mn9UKc4hu2vkJUdopPOOkl1I3hqBvwEXqSNj4"
+            d: "RVCFpk1DLDqCYV0T4ou0kLWNnbst5AnlPMBE2a_9LZ4"
           }
         },
         style: "fair"
@@ -517,8 +510,8 @@ ${by.sig}`;
         role: "rtc",
         name: "Ray Kowalczyk",
         pin: "710034",
-        pub: "BNb6-adLI-CtVk40MD6je9DCHkWE6qZYUMNuTEt64tmMsJk36XQNg4fLyluQI3yb49LXu5XusjkpbpqvlS2wkac",
-        sig: "BCamW4Y7DQtEWd1b8P5C1yd02JYo_WGdfAdcFahcdz9h7S4tC0zRVRL-BMIGLSwhZaOeopsyuL7poYB06R4rg3s",
+        pub: "BBQh1ubKDHgcNC6WYLHPKR5G64lx8bkAhiLFayZxnfNsUTJSdHaclJy97Ca1nSK5W04vxkX8TZO9y3HgMu8VY2U",
+        sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
         photo: "",
         minted: {
           role: "rtc",
@@ -526,10 +519,10 @@ ${by.sig}`;
           by: {
             name: "Marguerite Boudreau",
             pin: "900011",
-            sig: "BK_q1vztEWxVkWObb6DMQZxOacx0LEEMlDQNph2Rxu4jODK0e_LR-ElM9WUz5NzfG-ReHcXjnGui5PHnD275K8o",
+            sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
             role: "superintendent"
           },
-          signature: "ITOMYARGKwzZrhye0ySCMilu5lD8WSPAa74XSUvAUcCX_Tpplqb1vdNjxS2wgrmRknxhgMIsdgxIruag3Acwww"
+          signature: "IIW-PHUhc3meRshRoX6nvG3QxFG8YE36DVsE6HIaotLjneOo-AHBKDRj7YGU_MVuI1Qvz77SDsMQyHokn-oc-w"
         },
         keys: {
           priv: {
@@ -538,10 +531,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "1vr5p0sj4K1WTjQwPqN70MIeRYTqplhQw25MS3ri2Yw",
-            y: "sJk36XQNg4fLyluQI3yb49LXu5XusjkpbpqvlS2wkac",
+            x: "FCHW5soMeBw0LpZgsc8pHkbriXHxuQCGIsVrJnGd82w",
+            y: "UTJSdHaclJy97Ca1nSK5W04vxkX8TZO9y3HgMu8VY2U",
             crv: "P-256",
-            d: "zIZLW4pd7MPKJZFq2MS17WW10sds54JpRY5wf1gFt6I"
+            d: "azKYTuv3kvXMqUL4gyPq67vHJ6oCHxEJt9U7MfcL41o"
           },
           sign: {
             key_ops: [
@@ -549,10 +542,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "JqZbhjsNC0RZ3Vvw_kLXJ3TYlij9YZ18B1wVqFx3P2E",
-            y: "7S4tC0zRVRL-BMIGLSwhZaOeopsyuL7poYB06R4rg3s",
+            x: "sI6zMCBriGdOy50RHt-IdpryczuAe0BxuGd1x6AuR6E",
+            y: "MB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
             crv: "P-256",
-            d: "dt_3kWMtm2JxeZR13m0yczvFqXXe2C8ISgtsmfyHnfQ"
+            d: "69T55tFDagHv5VK4Jsoaik0Am4q8Z7kXJb21eivK-1c"
           }
         },
         style: "nose"
@@ -561,8 +554,8 @@ ${by.sig}`;
         role: "rtc",
         name: "Tom Ferland",
         pin: "710047",
-        pub: "BPmZdmewuTK1VcKFJrHU0zu5HsW-RN9MCSvrlOgEC7riWy-vvT6uGZCxDGPEunIbPdKaq0Sl7TgEjYfYMoRM8LQ",
-        sig: "BEVsV2RHUAyxeetyygmLdLHq181A_20EbZp2zC0jm6opNlKiDy-9Z0_Cn18tLiz9PxEo60RRZech_5WnFPjvlnw",
+        pub: "BElmqBjQUQaMUErnDMkXrnvZz_vXebUURf9qXmlhINwPjkPcqsQf0yaABsWSKULIA_LC09GWNJQYBpn36yO17t0",
+        sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
         photo: "",
         minted: {
           role: "rtc",
@@ -570,10 +563,10 @@ ${by.sig}`;
           by: {
             name: "Marguerite Boudreau",
             pin: "900011",
-            sig: "BK_q1vztEWxVkWObb6DMQZxOacx0LEEMlDQNph2Rxu4jODK0e_LR-ElM9WUz5NzfG-ReHcXjnGui5PHnD275K8o",
+            sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
             role: "superintendent"
           },
-          signature: "aAHST1SErP88Yx6x8tkRbOpgSNDl8bOhZcbZAk7Nl4RieFb7QlWwQtqtNVy8iu1lRkrrcvW12Z-9HrxWhzMAtQ"
+          signature: "akZQzlJQxzRT6HasnpjpFvxTl8MBDxL4rUI7iiZbrEGr1TcnoEyt5UCTAiWS71QNCxyYvcToIFjfEcDSd6RN8g"
         },
         keys: {
           priv: {
@@ -582,10 +575,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "-Zl2Z7C5MrVVwoUmsdTTO7kexb5E30wJK-uU6AQLuuI",
-            y: "Wy-vvT6uGZCxDGPEunIbPdKaq0Sl7TgEjYfYMoRM8LQ",
+            x: "SWaoGNBRBoxQSucMyReue9nP-9d5tRRF_2peaWEg3A8",
+            y: "jkPcqsQf0yaABsWSKULIA_LC09GWNJQYBpn36yO17t0",
             crv: "P-256",
-            d: "LbCZpPKRx6N8WX4-m0V_zHwM-SSQHTdEUGxNXKiS0bA"
+            d: "zUWd7Ct9cBOos-fdkJ6S4FieP4Z6_2UljTQIXg0mevU"
           },
           sign: {
             key_ops: [
@@ -593,10 +586,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "RWxXZEdQDLF563LKCYt0serXzUD_bQRtmnbMLSObqik",
-            y: "NlKiDy-9Z0_Cn18tLiz9PxEo60RRZech_5WnFPjvlnw",
+            x: "ot5AmKNivEc5En1zEnwlTtE9KlsMQMWkcxzFABo0Fck",
+            y: "tjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
             crv: "P-256",
-            d: "HCGNA8aUPOnq54yPTvsjszBnynYMpXKsc8HOyAvH3I0"
+            d: "h1IaiZ2OSwmDC0SZuQqqYYfCJbDLz_m1o61-8SpPMU0"
           }
         },
         style: "lazy"
@@ -607,8 +600,8 @@ ${by.sig}`;
         role: "crew",
         name: "Alice Marchand",
         pin: "123456",
-        pub: "BEvxVarPtpyN6Wo5zML9W1ACe7BZaSBJwx7cBMDjONNGfgECD9ip31cCNZG8OEj28oPFU6f03MYbb57djVNfE_c",
-        sig: "BFdrZmHm6JFRotkQRn7zRiUMX1PdYJO_V8oTbfZgN6FWRtL6eOEyUYB2jeDTO2Pte_oFROQM2cRAZZA7swZupzo",
+        pub: "BEtehBQ045zlKQSObkzdb8qLc835vKb-jc3JlLmtDlitcki50NTXDV4SF-EgJC5tgVRPYOFT-RnMFppSjmuy04o",
+        sig: "BJTGz46epVlINpQdWfl15TGeLTQXO6OLkV6k7AOEzdxxhOgmjSIldSIg9yTGeDVLbA4Ns1p5qva6c26rYvfCC0Y",
         photo: "",
         minted: {
           role: "crew",
@@ -616,10 +609,10 @@ ${by.sig}`;
           by: {
             name: "Denise Okafor",
             pin: "710021",
-            sig: "BHvHsZJXhferetyBduKnIDDFcNu2MpGOOjWStRpVvZEB3b2LmFk6O3Qi4KtjQMy4o4yukZ3n-vpWxe-9QyqKwdY",
+            sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
             role: "rtc"
           },
-          signature: "AqOEYcQyvNja3lLN4So26zyU41qdBQnGeFWvq0fAoTmjXL3ZqB0sHZ68zO6S97X4ibQM6cHB9rrRaSuA5BCD8w"
+          signature: "8rJiKjgMbd7bNaaFEnF5R6N4_dbeSly_q8BsbJ4YQytva155Ll1GdkDWKAUuB_al-fd4CImzXBuZ8RG2CZTSBg"
         },
         keys: {
           priv: {
@@ -628,10 +621,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "S_FVqs-2nI3pajnMwv1bUAJ7sFlpIEnDHtwEwOM400Y",
-            y: "fgECD9ip31cCNZG8OEj28oPFU6f03MYbb57djVNfE_c",
+            x: "S16EFDTjnOUpBI5uTN1vyotzzfm8pv6NzcmUua0OWK0",
+            y: "cki50NTXDV4SF-EgJC5tgVRPYOFT-RnMFppSjmuy04o",
             crv: "P-256",
-            d: "HDrJzIGPU2BPfrarL2KekZ8lhg99kVMDcJ5wQImz7HU"
+            d: "6EWw65lEPSHGvvz1QszzS4Q2G1PQ3XDAlGEqa4GwfKM"
           },
           sign: {
             key_ops: [
@@ -639,10 +632,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "V2tmYebokVGi2RBGfvNGJQxfU91gk79XyhNt9mA3oVY",
-            y: "RtL6eOEyUYB2jeDTO2Pte_oFROQM2cRAZZA7swZupzo",
+            x: "lMbPjp6lWUg2lB1Z-XXlMZ4tNBc7o4uRXqTsA4TN3HE",
+            y: "hOgmjSIldSIg9yTGeDVLbA4Ns1p5qva6c26rYvfCC0Y",
             crv: "P-256",
-            d: "5hzSKKw2Urm9KV9XzR0bDsvhALzSMbgj-tMa63doUyQ"
+            d: "LjLF2jlGg86R7E_an75zCVtzKQJlm5sHAGUW4PZR5t8"
           }
         },
         rtc: 0,
@@ -654,8 +647,8 @@ ${by.sig}`;
         role: "crew",
         name: "Ben Okoye",
         pin: "123457",
-        pub: "BHkj4lKnCNlbnOTDwvFZqBzmvTMJFlAXQ0ECuvxxzFT_jkkkKbttoWgkQX7xswLuojfP2xltk2N0is43npprpyU",
-        sig: "BPPocAuI5IlwU9-h7S-BYFADUdXbwN2BQBCycq2gFv1es5vR68Ny8E6OngNKwfmPq6BQKF6-5ThfVkiMNgf_Ios",
+        pub: "BCQigN6ybp2cESg5sOKNxeYwdzXaxskpRbTVOcKfl-teFdO5VVBIoTwxobnpcvoVX711fHk8Zqg9gtj6c93UJkM",
+        sig: "BHQsQLw-xsSpE0odptL7ofoucOPDbLd-Rp825uzOZMgT3-SEpY5j6p2gccFFPvbkJDaSUzI5g_dhGz_4xZofNPw",
         photo: "",
         minted: {
           role: "crew",
@@ -663,10 +656,10 @@ ${by.sig}`;
           by: {
             name: "Denise Okafor",
             pin: "710021",
-            sig: "BHvHsZJXhferetyBduKnIDDFcNu2MpGOOjWStRpVvZEB3b2LmFk6O3Qi4KtjQMy4o4yukZ3n-vpWxe-9QyqKwdY",
+            sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
             role: "rtc"
           },
-          signature: "P4qn6nLW3hoGlFu1kTTmY704jQm8n_FAORHTJrnZUKmb7vbDHEo1sGYI4HcL_YfyfHCI-vk041GfaZeSpB9Q_g"
+          signature: "LkKAxVtjJEmJxhDOKfDjnYhB-0OH_v63JKKIOc-njOs_Y_P8gnWV4FcVzafiiM1URR8l7nJ-GlfHWKL-gtn-eQ"
         },
         keys: {
           priv: {
@@ -675,10 +668,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "eSPiUqcI2Vuc5MPC8VmoHOa9MwkWUBdDQQK6_HHMVP8",
-            y: "jkkkKbttoWgkQX7xswLuojfP2xltk2N0is43npprpyU",
+            x: "JCKA3rJunZwRKDmw4o3F5jB3NdrGySlFtNU5wp-X614",
+            y: "FdO5VVBIoTwxobnpcvoVX711fHk8Zqg9gtj6c93UJkM",
             crv: "P-256",
-            d: "MYlt61VOrz0OtEBkaf2b0UFANhM9isMVSle_bNTDcTI"
+            d: "2TzZ_2blOZbvQOsNVTMH-BRKevuam8fKwOwXz6svW3o"
           },
           sign: {
             key_ops: [
@@ -686,10 +679,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "8-hwC4jkiXBT36HtL4FgUANR1dvA3YFAELJyraAW_V4",
-            y: "s5vR68Ny8E6OngNKwfmPq6BQKF6-5ThfVkiMNgf_Ios",
+            x: "dCxAvD7GxKkTSh2m0vuh-i5w48Nst35Gnzbm7M5kyBM",
+            y: "3-SEpY5j6p2gccFFPvbkJDaSUzI5g_dhGz_4xZofNPw",
             crv: "P-256",
-            d: "9zp0uQ4DPi9KPIqoN5toWvliluJHrWEFv6nVPN83R4o"
+            d: "7TCudfxQ6CtrM8PLoblJwzcLsSj1sLcnirhDoyoHFVo"
           }
         },
         rtc: 0,
@@ -701,8 +694,8 @@ ${by.sig}`;
         role: "crew",
         name: "Chloe Tremblay",
         pin: "123458",
-        pub: "BBO4eojyUDBgxSLLfTkcFkyQmNGLWwLAOF7kfZy8zdO0NO8qbQmooT2MskLQ0Ld9UsUDF7CtSS0N3N4ff2qUJKQ",
-        sig: "BL31J6LGJrWwmM-Oc8wjAY6mpb6korVnlzynj4mIvjuj1sdWaEQz-_TVsFBtGkvIxE0QOIEJHSEb2Om4U4Pv_98",
+        pub: "BB1Axqe62vR7EhNEHTN7kSm0QsFs0MuTwUvcX6yX8PzvkC4WfrSlUuhE1r9jKs2uTcclGkVslcOWjtx-yAlbG5o",
+        sig: "BO-Ba-CXBRTC83P5yjKdrGV2u4mDKI-thEh_tT_SzinHewkL1ybp4E9N8pgESF7ASlvJm2NEmYE4AdcOKwanR_w",
         photo: "",
         minted: {
           role: "crew",
@@ -710,10 +703,10 @@ ${by.sig}`;
           by: {
             name: "Denise Okafor",
             pin: "710021",
-            sig: "BHvHsZJXhferetyBduKnIDDFcNu2MpGOOjWStRpVvZEB3b2LmFk6O3Qi4KtjQMy4o4yukZ3n-vpWxe-9QyqKwdY",
+            sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
             role: "rtc"
           },
-          signature: "9lJjY-LZs4RtJ4_qVSn5XXH53vqJW_TeUNawlsOG4jSx5OrD7PR0FpKZuYOBZs8CHPT1PzLo3kkv759ckxeyyg"
+          signature: "s6Zypy3zL7rBF4Pg-uOANghzdo_FnL5bz8tLsq9X9tQvyjOrg4FBoHR8a3hOT7aLhK0o4EfNleYR9zpt0b1pzA"
         },
         keys: {
           priv: {
@@ -722,10 +715,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "E7h6iPJQMGDFIst9ORwWTJCY0YtbAsA4XuR9nLzN07Q",
-            y: "NO8qbQmooT2MskLQ0Ld9UsUDF7CtSS0N3N4ff2qUJKQ",
+            x: "HUDGp7ra9HsSE0QdM3uRKbRCwWzQy5PBS9xfrJfw_O8",
+            y: "kC4WfrSlUuhE1r9jKs2uTcclGkVslcOWjtx-yAlbG5o",
             crv: "P-256",
-            d: "y8Bf0Wv5RoUBpBUZZslt2JLifzEduBxNQNcewwwduQA"
+            d: "6QqMdmiFLZTK1kUuMW3pJx5neEHv8-FLJ1qRWCvKwho"
           },
           sign: {
             key_ops: [
@@ -733,10 +726,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "vfUnosYmtbCYz45zzCMBjqalvqSitWeXPKePiYi-O6M",
-            y: "1sdWaEQz-_TVsFBtGkvIxE0QOIEJHSEb2Om4U4Pv_98",
+            x: "74Fr4JcFFMLzc_nKMp2sZXa7iYMoj62ESH-1P9LOKcc",
+            y: "ewkL1ybp4E9N8pgESF7ASlvJm2NEmYE4AdcOKwanR_w",
             crv: "P-256",
-            d: "bByuYBidm4RasPsmG22zxIiH6yEsJnXOuiIdtnbW56E"
+            d: "9Xdbc3puu_2-XpZuruFZ3IHDijeFY2SGB8X9IiSapxE"
           }
         },
         rtc: 0,
@@ -748,8 +741,8 @@ ${by.sig}`;
         role: "crew",
         name: "Darius Hall",
         pin: "123459",
-        pub: "BKIpAIhRGtNy5cZS6DpD-kdwmyPNzUT2oEqCDURKzrsF_gqscVI8dzfRbDe9fl_5F81CSzUrGgmyvtUKedxig4k",
-        sig: "BGXa4dHkXNZcI37k9HTbCGKSNf136WJxENOhYp-xeRHfUVbb3j7ZrikJj-mDh5l6dTlYH25-sLbHgpEOnxS-Xwk",
+        pub: "BEC6VTMJzQU8ZPgt-EYu3Id8ZiNOn0tlaNovrZsuoMRqAkNZ2C3UXn6gC2DwkoWcojyxWqLrLPSptwWfzokFbwY",
+        sig: "BOFTjLMHZlkI4xhRKXQ5ws2U9O45TAUb1LcNhKjkx7xV9tIYbom1BBz_eLMV1_-G3HA9_EQqVpni0dK7F5bk0lw",
         photo: "",
         minted: {
           role: "crew",
@@ -757,10 +750,10 @@ ${by.sig}`;
           by: {
             name: "Denise Okafor",
             pin: "710021",
-            sig: "BHvHsZJXhferetyBduKnIDDFcNu2MpGOOjWStRpVvZEB3b2LmFk6O3Qi4KtjQMy4o4yukZ3n-vpWxe-9QyqKwdY",
+            sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
             role: "rtc"
           },
-          signature: "VJTQGSaEKpmTJy471vnaYbA-J4wpDv92En1qZtM8l-N-ZF-2s3HXw1themneCasaS4UZLRh5jWs0w1AdRtGvLQ"
+          signature: "1QLo_GHAMv1IDvcHMy1zQNf20GYA8M9NtwVhRlDIOLLt9ENrYgKXTSmvTyGZy8OV6U32Z8owopGggs4nQ2TBeA"
         },
         keys: {
           priv: {
@@ -769,10 +762,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "oikAiFEa03LlxlLoOkP6R3CbI83NRPagSoINRErOuwU",
-            y: "_gqscVI8dzfRbDe9fl_5F81CSzUrGgmyvtUKedxig4k",
+            x: "QLpVMwnNBTxk-C34Ri7ch3xmI06fS2Vo2i-tmy6gxGo",
+            y: "AkNZ2C3UXn6gC2DwkoWcojyxWqLrLPSptwWfzokFbwY",
             crv: "P-256",
-            d: "mMd-OnX4wL6Lx6SG1xQkkxDVTAUwJzHQlDRz8bpMUqg"
+            d: "O1wjRw9vf38AN18MMKEyuLGwnW28Wr6NUxAxPiwSo9o"
           },
           sign: {
             key_ops: [
@@ -780,10 +773,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "Zdrh0eRc1lwjfuT0dNsIYpI1_XfpYnEQ06Fin7F5Ed8",
-            y: "UVbb3j7ZrikJj-mDh5l6dTlYH25-sLbHgpEOnxS-Xwk",
+            x: "4VOMswdmWQjjGFEpdDnCzZT07jlMBRvUtw2EqOTHvFU",
+            y: "9tIYbom1BBz_eLMV1_-G3HA9_EQqVpni0dK7F5bk0lw",
             crv: "P-256",
-            d: "NhAmzHcNr-LwvXiyPpV2DvSu646PZH0_RMI9edNvIeA"
+            d: "-9nEKoZ2DG0-SD2IkApPRalSLe1qs5skl1Sin2jN42I"
           }
         },
         rtc: 0,
@@ -795,8 +788,8 @@ ${by.sig}`;
         role: "crew",
         name: "Emma Sinclair",
         pin: "123460",
-        pub: "BDDS4pFjF_xRiF83yhSnonPbF66gQgYmFtZfZs3MLhxYfiDrxHEe1lkMZXfl6QfANby3G5DNN-jWi1nlMciVH2w",
-        sig: "BDeyCYYpvw0y59Nc1-xz_gzqcUYZPvO-2tBUI--YdOqXXHEwy2h5nEwEUbbQmIwj30DLacDGKe_OF1wgki9DJCw",
+        pub: "BN93SNaXlVg9WKVzgjHYfJ4d3n0azQBUt2CLqBZv9-6IDjfmpvz1uhEN6graBM6aSYsf82KRUyHsHSjgWDqEzFw",
+        sig: "BFbBa4AAIqX_szYLGwEqkYP1jjPpEzYHbZdn8rnx9CPhqQwOeb7FHQXq0l1KlEUR7hIR1lCumg707RdfjVQjQd0",
         photo: "",
         minted: {
           role: "crew",
@@ -804,10 +797,10 @@ ${by.sig}`;
           by: {
             name: "Ray Kowalczyk",
             pin: "710034",
-            sig: "BCamW4Y7DQtEWd1b8P5C1yd02JYo_WGdfAdcFahcdz9h7S4tC0zRVRL-BMIGLSwhZaOeopsyuL7poYB06R4rg3s",
+            sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
             role: "rtc"
           },
-          signature: "aV_lutZcx7Xl2Rjb14dvW3lSThH4p2ZDwCLbwFEFyAJ1jOSPUiWdEZQG4QZy7hZLmeIbQSsWpyh_zaG8m3Mdyg"
+          signature: "9icx1lStRvUwQXVCqGrQIHPoO8U8vF5J4XVFYqgz95w3DCcUbZVqlDxs1YzHpej-ivEJxA4RY0vJ68CtRz6tHw"
         },
         keys: {
           priv: {
@@ -816,10 +809,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "MNLikWMX_FGIXzfKFKeic9sXrqBCBiYW1l9mzcwuHFg",
-            y: "fiDrxHEe1lkMZXfl6QfANby3G5DNN-jWi1nlMciVH2w",
+            x: "33dI1peVWD1YpXOCMdh8nh3efRrNAFS3YIuoFm_37og",
+            y: "Djfmpvz1uhEN6graBM6aSYsf82KRUyHsHSjgWDqEzFw",
             crv: "P-256",
-            d: "DIF0qeXCoJ-Vmb8-wHuMp-sPziV90Kyk4UkRlOXj0YY"
+            d: "ilCKj0hVEQ9gRum_7BDn7u5uzdVmM4ksEQCU5FnZMus"
           },
           sign: {
             key_ops: [
@@ -827,10 +820,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "N7IJhim_DTLn01zX7HP-DOpxRhk-877a0FQj75h06pc",
-            y: "XHEwy2h5nEwEUbbQmIwj30DLacDGKe_OF1wgki9DJCw",
+            x: "VsFrgAAipf-zNgsbASqRg_WOM-kTNgdtl2fyufH0I-E",
+            y: "qQwOeb7FHQXq0l1KlEUR7hIR1lCumg707RdfjVQjQd0",
             crv: "P-256",
-            d: "pSYhqSSJiwbvqyb3YEIkYbWaY8KS4C1hadYCdZ27MRg"
+            d: "kEA7TsZiiTdv4DYlI8taxFEjHV-rZcaqier9sipYooE"
           }
         },
         rtc: 1,
@@ -842,8 +835,8 @@ ${by.sig}`;
         role: "crew",
         name: "Gordon Whitfield",
         pin: "123461",
-        pub: "BNfWZvNmT5UwXShI5z08qYRtSOReKVem4zJ-1ajWDosbtgGifEOT3WAI8mSUqX_c87DPM4OacqAfG1nnlNPG9ys",
-        sig: "BBwtvkClB1m5F62lTVeTVIx2R3DO6y4niZoFu0-s5p5_pLKgl0UuapxveyQvg4LxJ_88Px4rqMfRkH5o0mUlE9A",
+        pub: "BCpNZrls84757Nqw_EEli4VYY940czDtlSJM9HOuWjEax8lhp-8bS-BZ134BWzhYeQxB9cY92y9sajZHakiYj_w",
+        sig: "BGiHCs1oIT6foxhTkzgbRYGmZUpbBxCQrs2SIKV6A6rUxEu_GM1eVEuWTod6pYjntoJJ_fgvla3C2PUQJU6IgyU",
         photo: "",
         minted: {
           role: "crew",
@@ -851,10 +844,10 @@ ${by.sig}`;
           by: {
             name: "Ray Kowalczyk",
             pin: "710034",
-            sig: "BCamW4Y7DQtEWd1b8P5C1yd02JYo_WGdfAdcFahcdz9h7S4tC0zRVRL-BMIGLSwhZaOeopsyuL7poYB06R4rg3s",
+            sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
             role: "rtc"
           },
-          signature: "_tszFqR6XofspgIjQ6ZrICVyxr6r6ilA8boWspZmOB49YcQYY3VhAKYjq0eSaxVmpd5JAaYEyF-Q8TJ0BiUWSw"
+          signature: "I5M-0XAVIsJGHg0RON9XKurEqwzFxwb3wtAP6dyxlcGQ5SXWvMJcryWMWaNbiBTyfrxdHgzdy1GtEDUFzCxk4Q"
         },
         keys: {
           priv: {
@@ -863,10 +856,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "19Zm82ZPlTBdKEjnPTyphG1I5F4pV6bjMn7VqNYOixs",
-            y: "tgGifEOT3WAI8mSUqX_c87DPM4OacqAfG1nnlNPG9ys",
+            x: "Kk1muWzzjvns2rD8QSWLhVhj3jRzMO2VIkz0c65aMRo",
+            y: "x8lhp-8bS-BZ134BWzhYeQxB9cY92y9sajZHakiYj_w",
             crv: "P-256",
-            d: "ue7yFC5jX4P7TgCW_yY0eaagKhkXZvY-y2yZhABZksM"
+            d: "No6mH91iyurvCmSa_R7MkaDfqkLIzAh8a-egt4260cM"
           },
           sign: {
             key_ops: [
@@ -874,10 +867,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "HC2-QKUHWbkXraVNV5NUjHZHcM7rLieJmgW7T6zmnn8",
-            y: "pLKgl0UuapxveyQvg4LxJ_88Px4rqMfRkH5o0mUlE9A",
+            x: "aIcKzWghPp-jGFOTOBtFgaZlSlsHEJCuzZIgpXoDqtQ",
+            y: "xEu_GM1eVEuWTod6pYjntoJJ_fgvla3C2PUQJU6IgyU",
             crv: "P-256",
-            d: "h0lIfcgyC9SDM4yD0e9kbaIEMJ2wAThz1iQfFnWCk0o"
+            d: "wsOU1q__quyFIXsw_W9_IDFBQVbMgcQRFCKOTIrxedA"
           }
         },
         rtc: 1,
@@ -889,8 +882,8 @@ ${by.sig}`;
         role: "crew",
         name: "Grace Whitecloud",
         pin: "123462",
-        pub: "BLTKTbpIj1c6pYjT4H2wIGO1XhYIaFVmvg8FEhxoLvvP-FVALM5IzOc3KtE0G3_2hOy-eizo1nhNAGWeiLLfIK8",
-        sig: "BBmQphDL4GHx4VeDYzE9XiwYtlmIQfunZTKxpmmWBzUDU2kXisXg7BbREWuKHW_l4Tp9lhi-ipehiQBluypBeuU",
+        pub: "BFLtbU2yhZYQV56oWV3om_z0b241ulsWV3CExWrsPl8GntZvDufAkblI-6Wu-GtpSY7Vh-5x9mzx1P7DdGatI7I",
+        sig: "BLhI1Bz_9nxUmm_npNBayGrrXbSkehvT7Za1ijKMADdpfKZPvJ-8nzJq-HKYH32WCQ8VFcKx_HiYa1HMRPKS08c",
         photo: "",
         minted: {
           role: "crew",
@@ -898,10 +891,10 @@ ${by.sig}`;
           by: {
             name: "Ray Kowalczyk",
             pin: "710034",
-            sig: "BCamW4Y7DQtEWd1b8P5C1yd02JYo_WGdfAdcFahcdz9h7S4tC0zRVRL-BMIGLSwhZaOeopsyuL7poYB06R4rg3s",
+            sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
             role: "rtc"
           },
-          signature: "FJwAGHGwJ3PnqJ7Foi0h3-IVdrTzEM27p1W-e7LX3_hRgZ6zXf-qEBM2vb5r-snvELmD3opwrm_8wxxTybCmuA"
+          signature: "aY3LyncNQ0Il8d_wq2-bS8952_r7QUujl71B23S6sw6mGZuhsrWZ_63nvOJRGwVqInEOmjGRJD2QqYv8Oo0s0A"
         },
         keys: {
           priv: {
@@ -910,10 +903,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "tMpNukiPVzqliNPgfbAgY7VeFghoVWa-DwUSHGgu-88",
-            y: "-FVALM5IzOc3KtE0G3_2hOy-eizo1nhNAGWeiLLfIK8",
+            x: "Uu1tTbKFlhBXnqhZXeib_PRvbjW6WxZXcITFauw-XwY",
+            y: "ntZvDufAkblI-6Wu-GtpSY7Vh-5x9mzx1P7DdGatI7I",
             crv: "P-256",
-            d: "zUzFBZXXV25y4P108GUpTmVUbVMWFzPGu0cE7cNvh3Q"
+            d: "oOGnJIGZh8Qt8LTXylXiIGpYjx1O1oFqbugIeRvxFjU"
           },
           sign: {
             key_ops: [
@@ -921,10 +914,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "GZCmEMvgYfHhV4NjMT1eLBi2WYhB-6dlMrGmaZYHNQM",
-            y: "U2kXisXg7BbREWuKHW_l4Tp9lhi-ipehiQBluypBeuU",
+            x: "uEjUHP_2fFSab-ek0FrIautdtKR6G9PtlrWKMowAN2k",
+            y: "fKZPvJ-8nzJq-HKYH32WCQ8VFcKx_HiYa1HMRPKS08c",
             crv: "P-256",
-            d: "MMW4ZMHPb21e7moRPtJUr1AQhQnw9P3LvIebnYLujjY"
+            d: "S2ZUNHJL92tgU8-ASPnmC_yVt3zeC3qy_FIs6UMi4dw"
           }
         },
         rtc: 1,
@@ -936,8 +929,8 @@ ${by.sig}`;
         role: "crew",
         name: "Hugo Lavoie",
         pin: "123463",
-        pub: "BBTblM1Cp90WSy66u0pPmP7IxZqtAPKr-Kv4bYD_Bwv2vo8zd6Tdn4VcEnXTPMyOlmDsS2RSh0CPhTeqSW9-JfA",
-        sig: "BJTtivuzOmtiQKD_hOMZk1ur7QOT1UVP_Ku5u2WwJv39fedY5SawVUGj1MTUQs2xLDdhR5WTmz_jD5E55_fDuyk",
+        pub: "BFxe9NTyaxVwVffWIRhNHHGLMIHPBJRwR0tcUMrqWFEwRywEYFawJ6-xaD6BpVsMXH-i5D1A4v1HW0Nrkuy90ic",
+        sig: "BDmYna3dyP-3KLkPI8wenv07Hh2rcuVO_rrT-tKPlGjMQTMDN6EzgNON067D4tnbpprwyKX2LtnAORQMQ1DCtyU",
         photo: "",
         minted: {
           role: "crew",
@@ -945,10 +938,10 @@ ${by.sig}`;
           by: {
             name: "Ray Kowalczyk",
             pin: "710034",
-            sig: "BCamW4Y7DQtEWd1b8P5C1yd02JYo_WGdfAdcFahcdz9h7S4tC0zRVRL-BMIGLSwhZaOeopsyuL7poYB06R4rg3s",
+            sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
             role: "rtc"
           },
-          signature: "p2Z5_K1g0ilwLeNQlUlj2mCvrGPcIQE-uMoh3KUdN7QaPYergEicGuMyusNoJz0tO82EchPzLbcvPK03Sp_C0A"
+          signature: "H3Vr8oGerW_n_IgjRhF0mapUVKCfRtGdVkORukFVsT7QbS_n1kk458J568-hUvqgVAkWKr9MFgY8OgVFUNlNEQ"
         },
         keys: {
           priv: {
@@ -957,10 +950,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "FNuUzUKn3RZLLrq7Sk-Y_sjFmq0A8qv4q_htgP8HC_Y",
-            y: "vo8zd6Tdn4VcEnXTPMyOlmDsS2RSh0CPhTeqSW9-JfA",
+            x: "XF701PJrFXBV99YhGE0ccYswgc8ElHBHS1xQyupYUTA",
+            y: "RywEYFawJ6-xaD6BpVsMXH-i5D1A4v1HW0Nrkuy90ic",
             crv: "P-256",
-            d: "2KWwFWQAsHch-r4VWiIHv3VluDILtoUsaf47Fazy76A"
+            d: "wDTi65obfgOxBAXly8uvzmbIvGcUEv1OaABKd922Y0w"
           },
           sign: {
             key_ops: [
@@ -968,10 +961,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "lO2K-7M6a2JAoP-E4xmTW6vtA5PVRU_8q7m7ZbAm_f0",
-            y: "fedY5SawVUGj1MTUQs2xLDdhR5WTmz_jD5E55_fDuyk",
+            x: "OZidrd3I_7couQ8jzB6e_TseHaty5U7-utP60o-UaMw",
+            y: "QTMDN6EzgNON067D4tnbpprwyKX2LtnAORQMQ1DCtyU",
             crv: "P-256",
-            d: "0T0BqlpYxO9ePqLIeKlLEUByMX-vaQxseKtI9HQxa7M"
+            d: "xWeh-nxeqW7QwYx6JAIL0KOKWdm96sD6FZHwdtudOkk"
           }
         },
         rtc: 1,
@@ -983,8 +976,8 @@ ${by.sig}`;
         role: "crew",
         name: "Isla McKay",
         pin: "123464",
-        pub: "BLnblXGTE5IP2IyirwYNZFlIuRjPtf6ga9txWswG_mjkeqO4NfWS-K0MalgE-F8acxgnMqJdL-XmBsbvbqYZAy0",
-        sig: "BIjCkPNHmOoz92gxhgBqJDtBeyOgbAt0uiO9Rhe6NTZUFMfdJvh4_0tP_w4Bmntwk8bxr-8kubmCj8lO00mKxtQ",
+        pub: "BLN5hdnVASVF4l3t7MCcpShOzmYMG-6t-ke1UE8VU5q08tcK4uRxoFCDRqnjWkSAvTsTNWjRKXtUSxSGJ4GKCv0",
+        sig: "BN_MIe1wqoNNbxDfVb7ny_eQDTIKrf2NVDyTiHnRVdCTLK6qEsj5gBwjrajlf0svO4JSSJlC4oNITiLMMfOxFgE",
         photo: "",
         minted: {
           role: "crew",
@@ -992,10 +985,10 @@ ${by.sig}`;
           by: {
             name: "Tom Ferland",
             pin: "710047",
-            sig: "BEVsV2RHUAyxeetyygmLdLHq181A_20EbZp2zC0jm6opNlKiDy-9Z0_Cn18tLiz9PxEo60RRZech_5WnFPjvlnw",
+            sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
             role: "rtc"
           },
-          signature: "816Fl_BrhATH4FxuBvWgZTnpIti_EyKAkYRRL_sEBrRTDj6xisMXcWjR6m0G-PqyD4Y8TvniLqbPLbX5_fRhww"
+          signature: "mi2zo7wFdyAi8DHDABUk7mqkshc_5BA5MPbHIy2j9x3qc2PFtalu8oN9ftpLKXbcYNtn7gMklw2p27lMNSTSQw"
         },
         keys: {
           priv: {
@@ -1004,10 +997,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "uduVcZMTkg_YjKKvBg1kWUi5GM-1_qBr23FazAb-aOQ",
-            y: "eqO4NfWS-K0MalgE-F8acxgnMqJdL-XmBsbvbqYZAy0",
+            x: "s3mF2dUBJUXiXe3swJylKE7OZgwb7q36R7VQTxVTmrQ",
+            y: "8tcK4uRxoFCDRqnjWkSAvTsTNWjRKXtUSxSGJ4GKCv0",
             crv: "P-256",
-            d: "xJJHb-HsVJyy4YTLwn35JMaQRTt1H1ApxyQCxMZuDwQ"
+            d: "88w5cO-LZDdoE507iRXvcobVgJpaf-ln2aoYB_XtD9k"
           },
           sign: {
             key_ops: [
@@ -1015,10 +1008,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "iMKQ80eY6jP3aDGGAGokO0F7I6BsC3S6I71GF7o1NlQ",
-            y: "FMfdJvh4_0tP_w4Bmntwk8bxr-8kubmCj8lO00mKxtQ",
+            x: "38wh7XCqg01vEN9VvufL95ANMgqt_Y1UPJOIedFV0JM",
+            y: "LK6qEsj5gBwjrajlf0svO4JSSJlC4oNITiLMMfOxFgE",
             crv: "P-256",
-            d: "NNfyTsBs713xwy7SKcqmzFKY9W_qZeQgTL8YU1740pg"
+            d: "ItBtmiLfiIIhcueG3HUTJwRI0788BH9Qs93DnTZugDs"
           }
         },
         rtc: 2,
@@ -1030,8 +1023,8 @@ ${by.sig}`;
         role: "crew",
         name: "Jonas Berg",
         pin: "123465",
-        pub: "BDenwZHg1Ym-JGha2laSUsxGJzM_mHvvZ1nxD8Nk4YJe7GaL8-dyzWM_DkNazI84fNoi3a4N55eUlHKZnETy5GY",
-        sig: "BLOE23royoxeoMh_5C42ZfZGNefL1XufPzlvzUyzpGtby88nnAWGg8ocje1mY_T1QWizCfUeyaeVMhWWmRdE8HM",
+        pub: "BDRHt47pAfq_h47ZlNPLqAWhn-p_d6LGyoXucXDonqIfYsRRCJFXHDiBLlbBznxU7DibbVMFLE8VH2hsWrxo3bA",
+        sig: "BF4ZgBLXCZLTuWvuvJdwU7fFFcedPDoWnraZLbiK0ckMGN_BE7mafHvE2yY5aVLiAZXjs2WaALz078JpbdxF9cU",
         photo: "",
         minted: {
           role: "crew",
@@ -1039,10 +1032,10 @@ ${by.sig}`;
           by: {
             name: "Tom Ferland",
             pin: "710047",
-            sig: "BEVsV2RHUAyxeetyygmLdLHq181A_20EbZp2zC0jm6opNlKiDy-9Z0_Cn18tLiz9PxEo60RRZech_5WnFPjvlnw",
+            sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
             role: "rtc"
           },
-          signature: "ttp6i_jcZt8NFXY-SKrE1yx_ziQqdHQhDcdBX5xc4NLPvo-n9MzCNhTNZ0SmLDDdbyf_zpAbDZ0-CAUqJoCpTw"
+          signature: "J-1JE6mMbjllVmEHgwX25_6jkq8W93egIuCv3VZ2YU5r8dmyoJa4tJAd2HxzdLWeTWk-Lpl_xjkBCdAt944T8g"
         },
         keys: {
           priv: {
@@ -1051,10 +1044,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "N6fBkeDVib4kaFraVpJSzEYnMz-Ye-9nWfEPw2Thgl4",
-            y: "7GaL8-dyzWM_DkNazI84fNoi3a4N55eUlHKZnETy5GY",
+            x: "NEe3jukB-r-HjtmU08uoBaGf6n93osbKhe5xcOieoh8",
+            y: "YsRRCJFXHDiBLlbBznxU7DibbVMFLE8VH2hsWrxo3bA",
             crv: "P-256",
-            d: "A-IqcJ4TJS6J0rEDLof4CaogJZDNPuWjf-P3fzQ06IE"
+            d: "ZnkR4RYc7QxaAV6aAk0FvSmTwvFjZ1kjxsWU48Ei8Os"
           },
           sign: {
             key_ops: [
@@ -1062,10 +1055,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "s4TbeujKjF6gyH_kLjZl9kY158vVe58_OW_NTLOka1s",
-            y: "y88nnAWGg8ocje1mY_T1QWizCfUeyaeVMhWWmRdE8HM",
+            x: "XhmAEtcJktO5a-68l3BTt8UVx508OhaetpktuIrRyQw",
+            y: "GN_BE7mafHvE2yY5aVLiAZXjs2WaALz078JpbdxF9cU",
             crv: "P-256",
-            d: "gQQZJiXBrMpa1O9MRJ-R7b-39-Uak6AA5f_3Zi16JLs"
+            d: "8bzJwDgUiCWC1ftIIeQIpeq2l_3OQ0Q6ob1b6aaZyTg"
           }
         },
         rtc: 2,
@@ -1077,8 +1070,8 @@ ${by.sig}`;
         role: "crew",
         name: "Kira Nowak",
         pin: "123466",
-        pub: "BFT72j5o7JST26QxGnMAON_xjevjKaOG7y4Bd1iAmF1VT-d5rhe3ZjHZ7ZVSFEvKncsGbbmt6TUx4LBJMUml6rQ",
-        sig: "BFec0HQ9kNFseBPSr2ygsxmEOTOXAl1XMzwrnkp90U9VS29HJhmTzJg8mJL2D423DdHp9oF-2Ip3PPlTPJVF6pM",
+        pub: "BIb4q0g6rlcWUeFq8AmKE7aGbU8FbnFkv-QYChQF-olO3EKzWDHQhGoFSQPNm2z-z8xfD8a7nzRREtRxEV6IWcQ",
+        sig: "BOdUdKjYq-Ua959JEWYmg6zevtLxaxZhiZ3gBUdldJsQtWNdL8BZjRU2EJN0OthaDvYFxnLH33UIpafMOUYokGc",
         photo: "",
         minted: {
           role: "crew",
@@ -1086,10 +1079,10 @@ ${by.sig}`;
           by: {
             name: "Tom Ferland",
             pin: "710047",
-            sig: "BEVsV2RHUAyxeetyygmLdLHq181A_20EbZp2zC0jm6opNlKiDy-9Z0_Cn18tLiz9PxEo60RRZech_5WnFPjvlnw",
+            sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
             role: "rtc"
           },
-          signature: "sRmVa0vSrwDpVTiMRk3bauZ1Z-LsCkoZPHmNXUfogQQlE6gTBOgCtBAOAH0g5opT8lDxHcE4oDjr7lN6B2bdoA"
+          signature: "2q9nDc7LoZDJjcmDViho_hn6trrjqU7rPqWVt5KRNijBieQiI2n_hMYeG-6hFTPRFYoXjGZqLvWgbUvKgMmz7A"
         },
         keys: {
           priv: {
@@ -1098,10 +1091,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "VPvaPmjslJPbpDEacwA43_GN6-Mpo4bvLgF3WICYXVU",
-            y: "T-d5rhe3ZjHZ7ZVSFEvKncsGbbmt6TUx4LBJMUml6rQ",
+            x: "hvirSDquVxZR4WrwCYoTtoZtTwVucWS_5BgKFAX6iU4",
+            y: "3EKzWDHQhGoFSQPNm2z-z8xfD8a7nzRREtRxEV6IWcQ",
             crv: "P-256",
-            d: "o8hhnakddxAt1dWFwHuUUZag3qHKYlMP6i_U6rALaLo"
+            d: "xXBk2oA8GumeBLWCDatNsbqLvO_TOeFUf0fv1r_I1QY"
           },
           sign: {
             key_ops: [
@@ -1109,10 +1102,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "V5zQdD2Q0Wx4E9KvbKCzGYQ5M5cCXVczPCueSn3RT1U",
-            y: "S29HJhmTzJg8mJL2D423DdHp9oF-2Ip3PPlTPJVF6pM",
+            x: "51R0qNir5Rr3n0kRZiaDrN6-0vFrFmGJneAFR2V0mxA",
+            y: "tWNdL8BZjRU2EJN0OthaDvYFxnLH33UIpafMOUYokGc",
             crv: "P-256",
-            d: "_2LWOXeoNGJXiAkxlU223CUt0ll67j1iFkXPeFSM_YU"
+            d: "oFqRg-t_BqNik0RgIUp3pUwyibzGb2Lxgymb4_b-Z1w"
           }
         },
         rtc: 2,
@@ -1124,8 +1117,8 @@ ${by.sig}`;
         role: "crew",
         name: "Liam Desjardins",
         pin: "123467",
-        pub: "BM3NlFf7arCZ9VxqcSXAmWciKJRM6JHTe_whXhk-86ajbB0DSAldHXVXLCNreo_LBK00ZhBeYd1m-Wjn3m9FdVc",
-        sig: "BHf9axHLji3faLaBVqPFyDu19JyyhoQk_eHFTBIiHin6MEBgLdGour6GF-nuYqpXCjqReDflyKAxVA9oFxWu2Yw",
+        pub: "BPrRwq83kTd35JAwfACxsvDXTktxugj14DPwQC-KJFLOskd-XP2H5qtVLrT_x0i40KghvSZXorHS21eBytuDv98",
+        sig: "BLKaj5r_ZJQApHBePiBM1LQh9b0Oe00btG8axsV6Nlwqw41rCHiz_0gWl4w-VKsh7Bl9zpXTHg7hMdT_ycRFobA",
         photo: "",
         minted: {
           role: "crew",
@@ -1133,10 +1126,10 @@ ${by.sig}`;
           by: {
             name: "Tom Ferland",
             pin: "710047",
-            sig: "BEVsV2RHUAyxeetyygmLdLHq181A_20EbZp2zC0jm6opNlKiDy-9Z0_Cn18tLiz9PxEo60RRZech_5WnFPjvlnw",
+            sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
             role: "rtc"
           },
-          signature: "wcSq-RJz2YQiSqYAwulOCSD3Srp4D7j_TjyNFgG91r_XrIRZmvRzeNYk9MAzPwamnw4k7JCMJm5vmZNwJRobxQ"
+          signature: "nyEov82ZNG7aeiEscspsxAc_i9i6gbZ6L_sSOxS-GV-23lg9qobrDMtl_uIVvGMRKhdOtM6prTu1mBzDd1jHaQ"
         },
         keys: {
           priv: {
@@ -1145,10 +1138,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "zc2UV_tqsJn1XGpxJcCZZyIolEzokdN7_CFeGT7zpqM",
-            y: "bB0DSAldHXVXLCNreo_LBK00ZhBeYd1m-Wjn3m9FdVc",
+            x: "-tHCrzeRN3fkkDB8ALGy8NdOS3G6CPXgM_BAL4okUs4",
+            y: "skd-XP2H5qtVLrT_x0i40KghvSZXorHS21eBytuDv98",
             crv: "P-256",
-            d: "plXtoyhZzqzIAumlVjWvLznZ-h0gZni8dhKVyKxacQg"
+            d: "FOIg9kbeoFtDirI2obUdjRqbD1tP1MuplHiCxj-uyFk"
           },
           sign: {
             key_ops: [
@@ -1156,10 +1149,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "d_1rEcuOLd9otoFWo8XIO7X0nLKGhCT94cVMEiIeKfo",
-            y: "MEBgLdGour6GF-nuYqpXCjqReDflyKAxVA9oFxWu2Yw",
+            x: "spqPmv9klACkcF4-IEzUtCH1vQ57TRu0bxrGxXo2XCo",
+            y: "w41rCHiz_0gWl4w-VKsh7Bl9zpXTHg7hMdT_ycRFobA",
             crv: "P-256",
-            d: "LWLUsznEkdfqGnPrPCXAmO0cMj1ZN9I2kjTr3CcHTI4"
+            d: "b4o1a-NAYV1St2MZewQTMH4-4naRZkUzbtyHJa9OMXw"
           }
         },
         rtc: 2,
@@ -1428,7 +1421,7 @@ ${until}`
     const saltBytes = unb64url(body.salt);
     const sid = await sidOf(saltBytes, pin);
     const wrap = body.clearances.find((w2) => w2.sid === sid);
-    if (!wrap) throw new Error(`no clearance for CN ${pin} on this test`);
+    if (!wrap) throw new Error(`no clearance for PIN ${pin} on this test`);
     const wk = await hkdfKey(await shared(train.priv, body.rtc), saltBytes, INFO.wrapIn(w));
     const { K } = await openJSON(wk, wrap.box);
     const Kb = unb64url(K);
@@ -1489,7 +1482,7 @@ ${box}`);
       sig: crew.sig || null,
       signature: crew.sign ? await signBytes(crew.sign, signed(test.id, box)) : null
     };
-    return armor("RELEASE", body, { title: test.title, train: `CN ${pin}`, answered: Object.keys(attempt.answers || {}).length, finished: attempt.finished ? new Date(attempt.finished).toISOString() : "" });
+    return armor("RELEASE", body, { title: test.title, train: `Crew ${pin}`, answered: Object.keys(attempt.answers || {}).length, finished: attempt.finished ? new Date(attempt.finished).toISOString() : "" });
   };
   var checkRelease = async (body, sigPub = body.sig) => body.signature && sigPub ? verifyBytes(sigPub, body.signature, signed(body.test, body.box)) : null;
   var takeRelease = async (text2, rtc2, record, sigPub) => {
@@ -1587,7 +1580,7 @@ ${box}`);
       signature: rtc2.sign ? await signBytes(rtc2.sign, signed2(record.id, release.hash, box)) : null,
       box
     };
-    return armor("CANCEL", body, { title: record.title, train: `CN ${pin}`, grade: `${Math.round(result.grade * 100)}%`, release: (release.hash || "").slice(0, 16) });
+    return armor("CANCEL", body, { title: record.title, train: `Crew ${pin}`, grade: `${Math.round(result.grade * 100)}%`, release: (release.hash || "").slice(0, 16) });
   };
 
   // src/director.js
@@ -1807,15 +1800,20 @@ ${hash}`));
     const { pin, train, attempt, hash } = await takeRelease(releaseText, issued.teacher, issued.record, userProfile?.sig);
     const marks = Object.fromEntries(issued.test.items.filter((it) => it.type === "short").map((it) => [it.id, (attempt.answers[it.id] || "").length > 12 ? 1 : 0]));
     const s = scoreAttempt(issued.test, attempt, marks);
-    return { name: `cancel-CN${pin}.txt`, text: await cancelTest(issued.record, issued.teacher, train, pin, s, { hash, answers: attempt.answers }), from: issued.teacher.name, score: s };
+    return { name: `cancel-${pin}.txt`, text: await cancelTest(issued.record, issued.teacher, train, pin, s, { hash, answers: attempt.answers }), from: issued.teacher.name, score: s };
   };
 
   // tutorial/src/main.js
   init_profile();
+
+  // WHY.txt
+  var WHY_default = "WHY BALLAST\n\nFree. Simple. Serverless. Permissionless. No external dependencies.\nRunnable in 30 years. It should outlast some rails.\n\nFREE\nNo licence, no seat count, no renewal, no vendor to call. Copy the file\nand you have another installation.\n\nSIMPLE\nOne HTML file, about 120 KB, in plain JavaScript that a person can read\nend to end. Three roles, eight kinds of file, one job: issue a test,\nwrite it, mark it, prove the marks. Nothing is configured; nothing is\nadministered.\n\nSERVERLESS\nNothing runs anywhere except in the browser in front of you. There is no\naccount, no database, no service to keep up, no log on someone else's\nmachine. The files are the network: registrations, tests, releases and\nmarks are small text files that move however your files already move --\na shared drive, an email, a Teams message, a USB stick, paper.\n\nPERMISSIONLESS\nNo installer, no administrator rights, no open port, no firewall\nexception. It runs from a shared drive, from a website, or from a file on\na desktop. Nothing it does needs to be allowed by anyone, because nothing\nit does looks different from opening a web page and saving a text file.\nThe page's own policy forbids it from talking to the network at all.\n\nNO EXTERNAL DEPENDENCIES\nNo framework, no package, no CDN, no font server, no update channel. The\ncryptography is the browser's own WebCrypto -- the same AES-GCM, P-256,\nSHA-256, HKDF and PBKDF2 that TLS uses. Every file format is written down\nbyte by byte in SPEC.md, and verify.py re-scores a release in Python with\nno browser at all, so the app is never the only thing that can read its\nown files.\n\nRUNNABLE IN 30 YEARS\nBrowsers do not remove JavaScript features or WebCrypto algorithms; a\npage that runs today runs in the next version. There is nothing to\nexpire, nothing to renew, no company whose closing takes the software\nwith it. Text files stay readable by anything that reads text. The whole\nsystem is a file you can hash once, keep, and open in 2056.\n\nWHAT IT IS NOT\nIt is not a proctoring system. Once a question is on a screen it is\ncleartext for the person looking at it, and no software can stop them\nreading, remembering or photographing it. What Ballast does is keep the\nanswers out of the file, show one item at a time under fullscreen with\nthe keyboard locked, refuse copy and print, record every break, watermark\nevery frame with the writer's name, and sign everything that moves so\nthat a mark can always be traced back to the answers it was given for.\n";
+
+  // tutorial/src/main.js
   var APP = new URLSearchParams(location.search).get("app") || "../ballast/index.html";
   var root = document.getElementById("desk");
   var coachEl = document.getElementById("coach");
-  var st = { ...initial(), ballast: { screen: "", role: void 0, pub: null, pin: null, minted: false }, step: 0, pendingSeen: 0, reportsSeen: 0, releasesSeen: 0, arrived: {}, issued: null, userReg: null };
+  var st = { ...initial(WHY_default), ballast: { screen: "", role: void 0, pub: null, pin: null, minted: false }, step: 0, pendingSeen: 0, reportsSeen: 0, releasesSeen: 0, arrived: {}, issued: null, userReg: null };
   var set = (next2) => {
     st = next2;
     render2();
@@ -1838,7 +1836,7 @@ ${hash}`));
       return tf ? (await releasesFor(tf.text, 0)).map((f) => ["Releases", f]) : [];
     },
     supProfile: async () => [["Inbox", { name: "profile-superintendent-Boudreau.txt", text: await profileText(await superintendent()), from: names.superintendent }]],
-    demoteToCrew: async () => [["Inbox", { name: "profile-CN-you.txt", text: await mintUser(await rtc(0), userPublic(), "crew"), from: names.rtcs[0] }]],
+    demoteToCrew: async () => [["Inbox", { name: "profile-crew-you.txt", text: await mintUser(await rtc(0), userPublic(), "crew"), from: names.rtcs[0] }]],
     testForUser: async () => {
       const issued = await testForUser(0, userPublic(), 0);
       st.issued = issued;
@@ -1873,7 +1871,7 @@ ${hash}`));
     set(items.length ? toast(s, `${items.length} file(s) arrived in ${items[0][0]}`) : s);
   };
   var act = async (kind, ...a) => {
-    if (kind === "open-explorer") return set(openWindow(st, "explorer", "CN-TRAINING \u2014 Training"));
+    if (kind === "open-explorer") return set(openWindow(st, "explorer", "WNR-TRAINING \u2014 Training"));
     if (kind === "open-browser") return set(openWindow(st, "browser", "Ballast \u2014 cror.ca", { src: APP + "?embedded=1", url: "https://cror.ca/ballast/" }));
     if (kind === "focus") {
       const top = st.windows.reduce((t, w) => w.z > (t?.z ?? -1) ? w : t, null);
@@ -1889,8 +1887,12 @@ ${hash}`));
       const f = st.files.find((x) => x.id === a[0]);
       if (!f) return;
       let s = seen(st, f.id);
+      if (f.note) {
+        const n = s.windows.find((w) => w.kind === "notepad");
+        return set(n ? focus(s, n.id) : openWindow(s, "notepad", f.name, { text: f.text }));
+      }
       if (/\.html$/.test(f.name)) {
-        const url = "file://///CN-TRAINING/Training/Ballast/ballast.html";
+        const url = "file://///WNR-TRAINING/Training/Ballast/ballast.html";
         const b = s.windows.find((w) => w.kind === "browser");
         s = b ? focus(setUrl(s, b.id, url, "Ballast \u2014 ballast.html"), b.id) : openWindow(s, "browser", "Ballast \u2014 ballast.html", { src: APP + "?embedded=1", url });
         return set(toast(s, "Opened ballast.html from the shared drive. (In this tutorial the file:// copy and cror.ca are the same page; in real life each keeps its own keys \u2014 pick one and stay with it.)"));
@@ -1946,7 +1948,7 @@ ${hash}`));
     if (n >= steps.length) return;
     set({ ...st, step: n, stepDone: false });
     const s = steps[n];
-    if (s.explorer) set(cd(openWindow(st, "explorer", "CN-TRAINING \u2014 Training"), s.explorer));
+    if (s.explorer) set(cd(openWindow(st, "explorer", "WNR-TRAINING \u2014 Training"), s.explorer));
     await arrive(s.arrive);
     coach();
   };
