@@ -6,7 +6,7 @@
  *   sim/index.html      the current viewer, from ../world-sim-app/dist (build it first)
  *   game/index.html     the conductor game, from vendor/
  *   ballast/index.html  the test system, from vendor/ (built in ~/projects/ballast)
- *   tutorial/index.html the Ballast tutorial, from vendor/ (built in ~/projects/ballast/tutorial)
+ *   tutorial/index.html the Ballast tutorial, from vendor/ (built in ~/projects/ballast-tutorial)
  *
  * Every link is a relative path to a named file, so the folder works from
  * file:// as well as from cror.ca.
