@@ -3,7 +3,7 @@
  *
  *   vendor/game/index.html      ~/projects/conductor-game  (npm run build there first)
  *   vendor/ballast/index.html   ~/projects/ballast         (node build.mjs there first)
- *   vendor/tutorial/index.html  ~/projects/ballast-tutorial (node build.mjs there first)
+ *   vendor/tutorial/index.html  ~/projects/ballast/tutorial (node tutorial/build.mjs there first)
  *
  * CI cannot see it, so `vendor/` is committed and `build.mjs` only assembles it.
  * Run this locally whenever the game changes:
@@ -18,7 +18,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECTS = join(HERE, '..', '..', '..');
 const GAME_DIST = process.env.GAME_DIST ?? join(PROJECTS, 'conductor-game', 'packages', 'game', 'dist');
 const BALLAST = process.env.BALLAST ?? join(PROJECTS, 'ballast');
-const TUTORIAL = process.env.TUTORIAL ?? join(PROJECTS, 'ballast-tutorial');
+const TUTORIAL = process.env.TUTORIAL ?? join(BALLAST, 'tutorial');
 const VENDOR = join(HERE, 'vendor');
 
 const packGame = async () => {

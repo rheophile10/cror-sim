@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-a3stUHFZWSpjZkdKxa2izyodhsgHfkXsfcK1JYI35fI='; style-src 'sha256-I2JYYkK2zdnnCoamNX0mZ2WrIt+z7qDmgaeZiazbFps='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-vAFQ7GusuxLhme355r78pGqmMg/lmdz469fuMiClhZY='; style-src 'sha256-I2JYYkK2zdnnCoamNX0mZ2WrIt+z7qDmgaeZiazbFps='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast tutorial</title>
 <style>* { box-sizing:border-box } html, body { margin:0; height:100%; font:14px/1.4 "Segoe UI", Arial, sans-serif; overflow:hidden; background:#0b3d5c }
 .desk { position:absolute; inset:0; background:radial-gradient(ellipse at 30% 20%, #1e6a8f 0%, #0b3d5c 55%, #072a40 100%); overflow:hidden }
@@ -47,10 +47,10 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
       __defProp(target, name, { get: all[name], enumerable: true });
   };
 
-  // ballast/src/bytes.js
+  // src/bytes.js
   var utf8, text, B64, b64, unb64, b64url, unb64url, hex, concat, random, sha256;
   var init_bytes = __esm({
-    "ballast/src/bytes.js"() {
+    "src/bytes.js"() {
       utf8 = (s) => new TextEncoder().encode(s);
       text = (b) => new TextDecoder().decode(b);
       B64 = typeof btoa === "function" ? { enc: (bin) => btoa(bin), dec: (s) => atob(s) } : { enc: (bin) => Buffer.from(bin, "binary").toString("base64"), dec: (s) => Buffer.from(s, "base64").toString("binary") };
@@ -76,7 +76,7 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
     }
   });
 
-  // ballast/src/armor.js
+  // src/armor.js
   var armor_exports = {};
   __export(armor_exports, {
     armor: () => armor,
@@ -87,7 +87,7 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
   });
   var KINDS, wrap76, armor, dearmor, blocks, bundle, sniff;
   var init_armor = __esm({
-    "ballast/src/armor.js"() {
+    "src/armor.js"() {
       init_bytes();
       KINDS = ["PROFILE", "TEST", "RELEASE", "CANCEL", "SHEET", "BOOK", "APPROVAL", "REPORT"];
       wrap76 = (s) => s.replace(/(.{76})/g, "$1\n").trim();
@@ -122,7 +122,7 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
     }
   });
 
-  // ballast/src/profile.js
+  // src/profile.js
   var profile_exports = {};
   __export(profile_exports, {
     MINTS_BY: () => MINTS_BY,
@@ -142,7 +142,7 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
   });
   var subtle, ECDH, ECDSA, ROLES, ROLE_OR_NONE, makeProfile, publicProfile, profileText, readProfile, exportKeys, importKeys, signBytes, verifyBytes, sourceHash, MINTS_BY, mintString, mintProfile, checkMint, registration;
   var init_profile = __esm({
-    "ballast/src/profile.js"() {
+    "src/profile.js"() {
       init_armor();
       init_bytes();
       subtle = crypto.subtle;
@@ -209,7 +209,7 @@ ${by.sig}`;
     }
   });
 
-  // ballast/src/app/h.js
+  // src/app/h.js
   var h = (tag, attrs = {}, ...children) => {
     const el = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs || {})) {
@@ -228,7 +228,7 @@ ${by.sig}`;
     return root2;
   };
 
-  // src/os.js
+  // tutorial/src/os.js
   var FOLDERS = ["Ballast", "Inbox", "Registrations", "Tests", "Releases", "Class profiles", "Outbox"];
   var initial = (notes = {}) => ({ windows: [], files: [
     { id: "ballast", folder: "Ballast", name: "ballast.html", text: "", from: "IT (saved from cror.ca/ballast)", at: Date.now() - 864e5 * 30, fresh: false },
@@ -383,7 +383,7 @@ ${by.sig}`;
     (frameFor(w), h("div", { class: "appslot", "data-slot": w.id }))
   );
 
-  // src/script.js
+  // tutorial/src/script.js
   var have = (st2, folder, re) => st2.files.some((f) => f.folder === folder && re.test(f.name));
   var exported = (st2, re) => have(st2, "Outbox", re);
   var info = (phase, title, text2, extra = {}) => ({ phase, title, text: text2, info: true, done: () => true, ...extra });
@@ -433,7 +433,7 @@ ${by.sig}`;
     info("crew", "Done", "That is the whole program: a superintendent who approves tests, reads appraisals and settles appeals; RTCs who mint crew and file class profiles; crew who write under a clearance, keep their hash, and get signed marks back. Everything that moved was a text file you could have emailed. Forget me in Ballast's top bar clears this pretend profile.", { done: () => false })
   ];
 
-  // ballast/samples/cast.json
+  // samples/cast.json
   var cast_default = {
     superintendent: {
       role: "superintendent",
@@ -1194,10 +1194,10 @@ ${by.sig}`;
     ]
   };
 
-  // src/cast.js
+  // tutorial/src/cast.js
   init_profile();
 
-  // ballast/src/txt.js
+  // src/txt.js
   init_bytes();
   var DUR = { s: 1, m: 60, h: 3600 };
   var parseTime = (s) => {
@@ -1319,11 +1319,11 @@ ${by.sig}`;
   };
   var publicItem = ({ key, answer, ...rest }) => rest;
 
-  // ballast/src/testfile.js
+  // src/testfile.js
   init_armor();
   init_bytes();
 
-  // ballast/src/crypto.js
+  // src/crypto.js
   init_bytes();
   var subtle2 = crypto.subtle;
   var EC = { name: "ECDH", namedCurve: "P-256" };
@@ -1369,7 +1369,7 @@ ${from}
 ${until}`
   };
 
-  // ballast/src/shuffle.js
+  // src/shuffle.js
   var fnv = (s) => {
     let h2 = 2166136261 >>> 0;
     for (const c of s) {
@@ -1395,7 +1395,7 @@ ${until}`
     return out;
   };
 
-  // ballast/src/testfile.js
+  // src/testfile.js
   var itemsHash = async (items) => hex(await sha256(utf8(items.map((i) => i.id + "\n" + i.box).join("\n"))));
   var defaultWindow = (now = Date.now()) => ({ from: new Date(now).toISOString(), until: new Date(now + 7 * 864e5).toISOString() });
   var checkWindow = (w) => {
@@ -1471,7 +1471,7 @@ ${until}`
     };
   };
 
-  // ballast/src/release.js
+  // src/release.js
   init_armor();
   init_bytes();
   init_profile();
@@ -1512,7 +1512,7 @@ ${box}`);
     return { pin: body.pin, sid: body.sid, train: body.train, attempt, hash: headers.sha256, signed: await checkRelease(body, sigPub || body.sig), late };
   };
 
-  // ballast/src/score.js
+  // src/score.js
   var tagKey = (t) => t.includes(":") ? t : t;
   var scoreAttempt = (test, attempt, marks = {}) => {
     const answers = attempt.answers || {};
@@ -1572,7 +1572,7 @@ ${box}`);
     };
   };
 
-  // ballast/src/cancel.js
+  // src/cancel.js
   init_armor();
   init_bytes();
   init_profile();
@@ -1600,7 +1600,7 @@ ${box}`);
     return armor("CANCEL", body, { title: record.title, train: `Crew ${pin}`, grade: `${Math.round(result.grade * 100)}%`, release: (release.hash || "").slice(0, 16) });
   };
 
-  // ballast/src/director.js
+  // src/director.js
   init_armor();
   init_bytes();
   init_profile();
@@ -1617,7 +1617,7 @@ ${hash}`));
     return armor("REPORT", { v: 1, kind: "report", test: report.test, teacher: teacher.pub, box: await sealJSON(key, report) }, { title: report.title, teacher: teacher.name, trains: report.rows.length });
   };
 
-  // src/cast.js
+  // tutorial/src/cast.js
   init_armor();
   var live = async (p) => importKeys(p, p.keys);
   var superintendent = () => live(cast_default.superintendent);
@@ -1820,16 +1820,16 @@ ${hash}`));
     return { name: `cancel-${pin}.txt`, text: await cancelTest(issued.record, issued.teacher, train, pin, s, { hash, answers: attempt.answers }), from: issued.teacher.name, score: s };
   };
 
-  // src/main.js
+  // tutorial/src/main.js
   init_profile();
 
-  // ballast/WHY.txt
+  // WHY.txt
   var WHY_default = "WHY BALLAST\n\nFree. Simple. Serverless. Permissionless. No external dependencies.\nRunnable in 30 years. It should outlast some rails.\n\nFREE\nNo licence, no seat count, no renewal, no vendor to call. Copy the file\nand you have another installation.\n\nSIMPLE\nOne HTML file, about 120 KB, in plain JavaScript that a person can read\nend to end. Three roles, eight kinds of file, one job: issue a test,\nwrite it, mark it, prove the marks. Nothing is configured; nothing is\nadministered.\n\nSERVERLESS\nNothing runs anywhere except in the browser in front of you. There is no\naccount, no database, no service to keep up, no log on someone else's\nmachine. The files are the network: registrations, tests, releases and\nmarks are small text files that move however your files already move --\na shared drive, an email, a Teams message, a USB stick, paper.\n\nPERMISSIONLESS\nNo installer, no administrator rights, no open port, no firewall\nexception. It runs from a shared drive, from a website, or from a file on\na desktop. Nothing it does needs to be allowed by anyone, because nothing\nit does looks different from opening a web page and saving a text file.\nThe page's own policy forbids it from talking to the network at all.\n\nNO EXTERNAL DEPENDENCIES\nNo framework, no package, no CDN, no font server, no update channel. The\ncryptography is the browser's own WebCrypto -- the same AES-GCM, P-256,\nSHA-256, HKDF and PBKDF2 that TLS uses. Every file format is written down\nbyte by byte in SPEC.md, and verify.py re-scores a release in Python with\nno browser at all, so the app is never the only thing that can read its\nown files.\n\nRUNNABLE IN 30 YEARS\nBrowsers do not remove JavaScript features or WebCrypto algorithms; a\npage that runs today runs in the next version. There is nothing to\nexpire, nothing to renew, no company whose closing takes the software\nwith it. Text files stay readable by anything that reads text. The whole\nsystem is a file you can hash once, keep, and open in 2056.\n\nTHE MARK IS FOR YOUR ANSWERS\nWhen you release, your answers are sealed to the RTC and signed with your\nown key, and Ballast shows you the file's SHA-256 -- your receipt. The\ncancellation that comes back is signed by the RTC, names that hash, and\nrepeats your answers as marked, item by item. If the hash is not yours or\nthe signature is bad, the marks are not for what you released, and the\nsuperintendent who approved the test can re-score your release from a copy\nsealed to them, with no help from the RTC. Nobody can quietly change\neither side of the mark.\n\nNO NETWORK, NO LATENCY\nThere is no server to reach, so there is nothing to time out. The test is\na file already on your machine before you start; the clock is your\nmachine's; every answer is recorded locally the moment you give it; the\nrelease is written when you press the button, not when a request\ncompletes. A submission cannot be lost in transit, fail to post, or be\ncounted late because a page hung. If the building loses its network in\nthe last minute of a test, nothing happens.\n\nWHAT IT IS NOT\nIt is not a proctoring system. Once a question is on a screen it is\ncleartext for the person looking at it, and no software can stop them\nreading, remembering or photographing it. What Ballast does is keep the\nanswers out of the file, show one item at a time under fullscreen with\nthe keyboard locked, refuse copy and print, record every break, watermark\nevery frame with the writer's name, and sign everything that moves so\nthat a mark can always be traced back to the answers it was given for.\n";
 
-  // ballast/ARMOR.txt
+  // ARMOR.txt
   var ARMOR_default = 'ARMORED TEXT FILES\n\nEverything Ballast sends or receives is an armored text file. Eight kinds:\nPROFILE, TEST, RELEASE, CANCEL, APPROVAL, REPORT, SHEET, BOOK. Ballast runs\non these; there is nothing else.\n\nIT IS A GBO\nA General Bulletin Order is a page of plain text. It has a number, it says\nwho it is to, it is transmitted by whatever means is at hand -- read over\nthe radio, printed at the terminal, handed across a desk -- and the crew\nrepeats it back to prove they copied it correctly. The medium never\nmatters. The words do.\n\nAn armored text file is the same idea for a computer. It is a block of\nplain text with a beginning line and an ending line, a few readable\nheaders, and a body that is only letters, digits, + / and =. It can be\ntransmitted by whatever means is at hand, and it carries its own\nrepeat-back: a sha256 in the header that the receiver recomputes.\n\nWHAT ONE LOOKS LIKE\n\n  -----BEGIN BALLAST CANCEL-----\n  version: 1\n  title: Test 1 - Definitions and signals\n  train: Crew 123456\n  grade: 91%\n  release: 4c1f0a9e2b7d3e10\n  sha256: 9a0b...e3c1\n\n  eyJ2IjoxLCJraW5kIjoiY2FuY2VsIiwidGVzdCI6Ilh...\n  -----END BALLAST CANCEL-----\n\nThe headers are for people: anyone can see what it is, who it is for and\nwhether it arrived intact, without opening it. The body is the file\nproper -- JSON, signed, and encrypted where it must be -- written out as\nbase64 so that nothing between sender and receiver can mangle it.\n\nWHY IT IS GOOD\n- It goes anywhere text goes: an email attachment, an email body, a chat\n  message, a shared folder, a USB stick, a printout, a photograph of a\n  printout. Ballast finds the block inside whatever surrounds it, so a\n  file pasted into the middle of an email still opens.\n- It survives everything that breaks binary files: mail gateways, line\n  ending changes, copy and paste, "smart" quotes, being typed back in.\n- It is inert. A text file cannot run, and Ballast never executes what it\n  reads; the text is parsed as data and drawn as text.\n- It is auditable. IT can read every header of every file with any text\n  editor, and hash the file, without being able to read the test inside.\n- It is durable. Text is the one format that will still open in 2056.\n\nWHAT THE ENVELOPE DOES NOT DO\nThe envelope does not keep secrets; the body does. A TEST body holds\nevery item encrypted under its own key; a RELEASE is sealed to one RTC\nand signed by one crew member; a CANCEL is sealed to one crew member and\nsigned by the RTC. Copy an armored file to a hundred people and only the\nones it was sealed to can open it, and the sha256 tells everyone else\nthat it was not touched.\n';
 
-  // src/main.js
+  // tutorial/src/main.js
   var APP = new URLSearchParams(location.search).get("app") || "../ballast/index.html";
   var root = document.getElementById("desk");
   var coachEl = document.getElementById("coach");

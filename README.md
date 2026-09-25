@@ -51,7 +51,7 @@ system) at `ballast/` and its tutorial at `tutorial/`. The game and Ballast come
 builds are committed in `site/vendor/`:
 
 ```sh
-npm run pack --prefix site                                            # refresh site/vendor from ../../conductor-game, ../../ballast and ../../ballast-tutorial
+npm run pack --prefix site                                            # refresh site/vendor from ../../conductor-gameand ../../ballast
 npm run build --prefix world-sim-app && npm run build --prefix site   # site/dist
 npm test --prefix site                                                # Chromium, file:// and http
 ```
