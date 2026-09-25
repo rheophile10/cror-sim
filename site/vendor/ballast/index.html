@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-VXwZPonfIp4+BuFJrcvUkywqNGZsKnCgTGv+VjYbh8Y='; style-src 'sha256-bsNQAe9HTfQn15OCTlSa557Mf6pOzutiK/sa6BHyYWs='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-RdjNrj9PMolNrmY3RE+QTHBu0/+Rpgf21/RwsR5Akqw='; style-src 'sha256-bsNQAe9HTfQn15OCTlSa557Mf6pOzutiK/sa6BHyYWs='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast</title>
 <style>:root { --ink:#111; --bg:#fff; --mute:#666; --line:#ddd; --accent:#1d4ed8; --good:#15803d; --bad:#b91c1c; }
 * { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 Arial, sans-serif; -webkit-user-select:none; user-select:none }
@@ -93,7 +93,7 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
   var sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
 
   // src/armor.js
-  var KINDS = ["PROFILE", "TGBO", "RELEASE", "CANCEL", "SHEET", "BOOK", "APPROVAL", "REPORT"];
+  var KINDS = ["PROFILE", "TEST", "RELEASE", "CANCEL", "SHEET", "BOOK", "APPROVAL", "REPORT"];
   var wrap76 = (s) => s.replace(/(.{76})/g, "$1\n").trim();
   var armor = async (kind, body, headers = {}) => {
     const bytes = utf8(JSON.stringify(body));
@@ -122,6 +122,68 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
   };
   var sniff = (s) => (/-----BEGIN BALLAST ([A-Z]+)-----/.exec(s) || [])[1] || null;
 
+  // src/profile.js
+  var subtle = crypto.subtle;
+  var ECDH = { name: "ECDH", namedCurve: "P-256" };
+  var ECDSA = { name: "ECDSA", namedCurve: "P-256" };
+  var ROLES = ["crew", "rtc", "superintendent"];
+  var ROLE_OR_NONE = [...ROLES, "none"];
+  var makeProfile = async (role, name, pin, photo = "", extractable = false) => {
+    if (!ROLE_OR_NONE.includes(role)) throw new Error(`bad role ${role}`);
+    if (!/^\d{4,8}$/.test(String(pin))) throw new Error("PIN must be 4\u20138 digits");
+    const kx = await subtle.generateKey(ECDH, extractable, ["deriveBits"]);
+    const ks = await subtle.generateKey(ECDSA, extractable, ["sign", "verify"]);
+    return {
+      role,
+      name: String(name).trim(),
+      pin: String(pin).trim(),
+      photo,
+      pub: b64url(new Uint8Array(await subtle.exportKey("raw", kx.publicKey))),
+      sig: b64url(new Uint8Array(await subtle.exportKey("raw", ks.publicKey))),
+      priv: kx.privateKey,
+      sign: ks.privateKey
+    };
+  };
+  var publicProfile = ({ role, name, pin, pub, sig, photo, minted }) => ({ role, name, pin, pub, sig, photo, ...minted ? { minted } : {} });
+  var profileText = (p) => armor("PROFILE", { v: 1, kind: "profile", ...publicProfile(p) }, { role: p.role, name: p.name, pin: p.pin });
+  var readProfile = async (t) => {
+    const { body } = await dearmor(t, "PROFILE");
+    if (!ROLE_OR_NONE.includes(body.role)) throw new Error("bad role");
+    if (!/^\d{4,8}$/.test(body.pin)) throw new Error("bad PIN");
+    if (body.role !== "none" && !await checkMint(body)) throw new Error(`${body.name}'s ${body.role} role is not properly minted`);
+    return body;
+  };
+  var exportKeys = async (p) => ({ priv: await subtle.exportKey("jwk", p.priv), sign: await subtle.exportKey("jwk", p.sign) });
+  var importKeys = async (p, jwks) => ({ ...p, priv: await subtle.importKey("jwk", jwks.priv, ECDH, true, ["deriveBits"]), sign: await subtle.importKey("jwk", jwks.sign, ECDSA, true, ["sign"]) });
+  var signBytes = async (signKey, bytes) => b64url(new Uint8Array(await subtle.sign({ name: "ECDSA", hash: "SHA-256" }, signKey, bytes)));
+  var verifyBytes = async (sigPub, signature, bytes) => {
+    const k = await subtle.importKey("raw", unb64url(sigPub), ECDSA, true, ["verify"]);
+    return subtle.verify({ name: "ECDSA", hash: "SHA-256" }, k, unb64url(signature), bytes);
+  };
+  var sourceHash = async (source) => Array.from(await sha256(utf8(source.replace(/\r\n/g, "\n")))).map((b) => b.toString(16).padStart(2, "0")).join("");
+  var MINTS_BY = { crew: "rtc", rtc: "superintendent", superintendent: "superintendent" };
+  var mintString = (p, role, start, by) => `ballast/mint/1
+${role}
+${start}
+${p.pin}
+${p.pub}
+${p.sig}
+${by.sig}`;
+  var mintProfile = async (minter, profile, role, start = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) => {
+    if (!ROLES.includes(role)) throw new Error(`bad role ${role}`);
+    if (minter.role !== MINTS_BY[role]) throw new Error(`a ${minter.role} cannot mint ${role}`);
+    const by = { name: minter.name, pin: minter.pin, sig: minter.sig, role: minter.role };
+    const signature = await signBytes(minter.sign, utf8(mintString(profile, role, start, by)));
+    return { ...publicProfile(profile), role, minted: { role, start, by, signature } };
+  };
+  var checkMint = async (p) => {
+    const m = p.minted;
+    if (!m || m.role !== p.role || !ROLES.includes(p.role)) return false;
+    if (m.by.role !== MINTS_BY[p.role]) return false;
+    if (p.role === "superintendent" && m.by.sig !== p.sig) return false;
+    return verifyBytes(m.by.sig, m.signature, utf8(mintString(p, p.role, m.start, m.by)));
+  };
+
   // src/app/store.js
   var DB = "ballast";
   var VER = 1;
@@ -143,44 +205,6 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
   var get = (k) => tx("readonly", (s) => s.get(k));
   var set = (k, v) => tx("readwrite", (s) => s.put(v, k));
   var del = (k) => tx("readwrite", (s) => s.delete(k));
-
-  // src/profile.js
-  var subtle = crypto.subtle;
-  var ECDH = { name: "ECDH", namedCurve: "P-256" };
-  var ECDSA = { name: "ECDSA", namedCurve: "P-256" };
-  var ROLES = ["crew", "rtc", "superintendent"];
-  var makeProfile = async (role, name, pin, photo = "", extractable = false) => {
-    if (!ROLES.includes(role)) throw new Error(`bad role ${role}`);
-    if (!/^\d{4,8}$/.test(String(pin))) throw new Error("PIN must be 4\u20138 digits");
-    const kx = await subtle.generateKey(ECDH, extractable, ["deriveBits"]);
-    const ks = await subtle.generateKey(ECDSA, extractable, ["sign", "verify"]);
-    return {
-      role,
-      name: String(name).trim(),
-      pin: String(pin).trim(),
-      photo,
-      pub: b64url(new Uint8Array(await subtle.exportKey("raw", kx.publicKey))),
-      sig: b64url(new Uint8Array(await subtle.exportKey("raw", ks.publicKey))),
-      priv: kx.privateKey,
-      sign: ks.privateKey
-    };
-  };
-  var publicProfile = ({ role, name, pin, pub, sig, photo }) => ({ role, name, pin, pub, sig, photo });
-  var profileText = (p) => armor("PROFILE", { v: 1, kind: "profile", ...publicProfile(p) }, { role: p.role, name: p.name, pin: p.pin });
-  var readProfile = async (t) => {
-    const { body } = await dearmor(t, "PROFILE");
-    if (!ROLES.includes(body.role)) throw new Error("bad role");
-    if (!/^\d{4,8}$/.test(body.pin)) throw new Error("bad PIN");
-    return body;
-  };
-  var exportKeys = async (p) => ({ priv: await subtle.exportKey("jwk", p.priv), sign: await subtle.exportKey("jwk", p.sign) });
-  var importKeys = async (p, jwks) => ({ ...p, priv: await subtle.importKey("jwk", jwks.priv, ECDH, true, ["deriveBits"]), sign: await subtle.importKey("jwk", jwks.sign, ECDSA, true, ["sign"]) });
-  var signBytes = async (signKey, bytes) => b64url(new Uint8Array(await subtle.sign({ name: "ECDSA", hash: "SHA-256" }, signKey, bytes)));
-  var verifyBytes = async (sigPub, signature, bytes) => {
-    const k = await subtle.importKey("raw", unb64url(sigPub), ECDSA, true, ["verify"]);
-    return subtle.verify({ name: "ECDSA", hash: "SHA-256" }, k, unb64url(signature), bytes);
-  };
-  var sourceHash = async (source) => Array.from(await sha256(utf8(source.replace(/\r\n/g, "\n")))).map((b) => b.toString(16).padStart(2, "0")).join("");
 
   // src/crypto.js
   var subtle2 = crypto.subtle;
@@ -379,9 +403,9 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
     return out;
   };
 
-  // src/tgbo.js
+  // src/testfile.js
   var itemsHash = async (items) => hex(await sha256(utf8(items.map((i) => i.id + "\n" + i.box).join("\n"))));
-  var issueTGBO = async (test, rtc, trains, assets = {}, rtcName = "", approval = null) => {
+  var issueTest = async (test, rtc, trains, assets = {}, rtcName = "", approval = null) => {
     const id = b64url(random(16)), saltBytes = random(16), salt = b64url(saltBytes);
     const K = random(32), Kkey = await rawKey(K);
     const items = [];
@@ -401,17 +425,17 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
       clearances.push({ no: i + 1, sid: await sidOf(saltBytes, t.pin), box: await sealJSON(wk, { K: b64url(K) }) });
     }
     const hash = await itemsHash(items);
-    const body = { v: 1, kind: "tgbo", id, salt, title: test.title, settings: test.settings, areas: test.areas, rtc: rtc.pub, rtcName, approval, clearances, items, hash };
-    const text2 = await armor("TGBO", body, { title: test.title, rtc: rtcName, items: items.length, clearances: trains.length, approved: approval ? "yes" : "no", complete: hash.slice(0, 4).toUpperCase() });
+    const body = { v: 1, kind: "test", id, salt, title: test.title, settings: test.settings, areas: test.areas, rtc: rtc.pub, rtcName, approval, clearances, items, hash };
+    const text2 = await armor("TEST", body, { title: test.title, rtc: rtcName, items: items.length, clearances: trains.length, approved: approval ? "yes" : "no", complete: hash.slice(0, 4).toUpperCase() });
     return { text: text2, record: { id, salt, hash, key: b64url(K), title: test.title } };
   };
-  var copyTGBO = async (text2, train, pin) => {
-    const { body } = await dearmor(text2, "TGBO");
-    if (await itemsHash(body.items) !== body.hash) throw new Error("TGBO does not compare: items altered");
+  var copyTest = async (text2, train, pin) => {
+    const { body } = await dearmor(text2, "TEST");
+    if (await itemsHash(body.items) !== body.hash) throw new Error("test does not compare: items altered");
     const saltBytes = unb64url(body.salt);
     const sid = await sidOf(saltBytes, pin);
     const wrap2 = body.clearances.find((w) => w.sid === sid);
-    if (!wrap2) throw new Error(`no clearance for CN ${pin} on this TGBO`);
+    if (!wrap2) throw new Error(`no clearance for CN ${pin} on this test`);
     const wk = await hkdfKey(await shared(train.priv, body.rtc), saltBytes, INFO.wrap);
     const { K } = await openJSON(wk, wrap2.box);
     const Kb = unb64url(K);
@@ -442,35 +466,35 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
       }
     };
   };
-  var openItem = async (record, tgboBody, itemId) => {
+  var openItem = async (record, testBody, itemId) => {
     const saltBytes = unb64url(record.salt);
-    const it = tgboBody.items.find((i) => i.id === itemId);
+    const it = testBody.items.find((i) => i.id === itemId);
     return openJSON(await hkdfKey(unb64url(record.key), saltBytes, INFO.item(itemId)), it.box);
   };
 
   // src/release.js
-  var giveRelease = async (tgbo, train, pin, attempt) => {
-    const key = await hkdfKey(await shared(train.priv, tgbo.rtc), unb64url(tgbo.salt), INFO.spike);
-    const body = { v: 1, kind: "release", tgbo: tgbo.id, hash: tgbo.hash, sid: tgbo.sid, pin: String(pin), train: train.pub, box: await sealJSON(key, attempt) };
-    return armor("RELEASE", body, { title: tgbo.title, train: `CN ${pin}`, answered: Object.keys(attempt.answers || {}).length });
+  var giveRelease = async (test, crew, pin, attempt) => {
+    const key = await hkdfKey(await shared(crew.priv, test.rtc), unb64url(test.salt), INFO.spike);
+    const body = { v: 1, kind: "release", test: test.id, hash: test.hash, sid: test.sid, pin: String(pin), train: crew.pub, box: await sealJSON(key, attempt) };
+    return armor("RELEASE", body, { title: test.title, train: `CN ${pin}`, answered: Object.keys(attempt.answers || {}).length });
   };
   var takeRelease = async (text2, rtc, record) => {
     const { body } = await dearmor(text2, "RELEASE");
-    if (body.tgbo !== record.id) throw new Error("release is for a different TGBO");
-    if (body.hash !== record.hash) throw new Error("release does not compare: TGBO hash differs");
+    if (body.test !== record.id) throw new Error("release is for a different test");
+    if (body.hash !== record.hash) throw new Error("release does not compare: test hash differs");
     const key = await hkdfKey(await shared(rtc.priv, body.train), unb64url(record.salt), INFO.spike);
     const attempt = await openJSON(key, body.box);
     return { pin: body.pin, sid: body.sid, train: body.train, attempt };
   };
 
   // src/cancel.js
-  var cancelTGBO = async (record, rtc, trainPub, pin, result) => {
+  var cancelTest = async (record, rtc, trainPub, pin, result) => {
     const key = await hkdfKey(await shared(rtc.priv, trainPub), unb64url(record.salt), INFO.plate);
     const { perItem, ...rest } = result;
     const body = {
       v: 1,
       kind: "cancel",
-      tgbo: record.id,
+      test: record.id,
       salt: record.salt,
       pin: String(pin),
       rtc: rtc.pub,
@@ -859,7 +883,7 @@ A: Each has a copy; the designation is correct; the engine number is verified vi
     draw(x);
     c.toBlob(async (b) => res(btoa(String.fromCharCode(...new Uint8Array(await b.arrayBuffer())))), "image/jpeg", 0.8);
   });
-  var renderRegister = (root4, role, label, done, { extractable = false } = {}) => {
+  var renderRegister = (root4, done) => {
     let photo = "", stream = null;
     const video = h("video", { autoplay: true, playsinline: true, muted: true, style: { display: "none", width: "240px", borderRadius: "8px" } });
     const preview = h("div", { class: "row" });
@@ -899,7 +923,7 @@ A: Each has a copy; the designation is correct; the engine number is verified vi
     const submit = async (e) => {
       e.preventDefault();
       try {
-        const p = await makeProfile(role, name.value, pin.value, photo, extractable);
+        const p = await makeProfile("none", name.value, pin.value, photo, true);
         stopCam();
         done(p, await profileText(p));
       } catch (err) {
@@ -908,7 +932,7 @@ A: Each has a copy; the designation is correct; the engine number is verified vi
     };
     mount(
       root4,
-      h("h1", {}, `Register as ${label}`),
+      h("h1", {}, "Register"),
       h(
         "form",
         { onsubmit: submit, class: "card" },
@@ -920,14 +944,14 @@ A: Each has a copy; the designation is correct; the engine number is verified vi
         status,
         h("button", { type: "submit", class: "primary" }, "Register")
       ),
-      h("p", { class: "small" }, "Your browser makes and keeps your keys. Your profile \u2014 name, PIN, photo, public keys \u2014 is a text file you send to the people who need it.")
+      h("p", { class: "small" }, "Your browser makes and keeps your keys. Your registration \u2014 name, PIN, photo, public keys \u2014 is a text file you send to your RTC, who sends back your profile with your role.")
     );
   };
   var profileCard = (p, text2, extra = []) => h(
     "div",
     { class: "card row" },
     avatar(p, 72),
-    h("div", {}, h("b", {}, p.name), ` \xB7 ${p.role === "crew" ? "CN " : ""}${p.pin} \xB7 ${p.role}`, h(
+    h("div", {}, h("b", {}, p.name), ` \xB7 ${p.role === "crew" ? "CN " : ""}${p.pin} \xB7 ${p.role === "none" ? "not yet minted" : p.role}`, p.minted ? h("div", { class: "small" }, `${p.role} since ${p.minted.start}, minted by ${p.minted.by.name}`) : null, h(
       "div",
       { class: "row" },
       text2 ? h("button", { onclick: () => download(`profile-${p.pin}.txt`, text2) }, "Download profile") : null,
@@ -939,49 +963,36 @@ A: Each has a copy; the designation is correct; the engine number is verified vi
   // src/app/crew.js
   var now = () => Date.now();
   var me = async () => await get("profile") || null;
-  var renderHome = async (root4, go4) => {
+  var renderHome = async (root4, go4, dropBox2) => {
     const p = await me();
     const log = await get("crewlog") || {};
-    const step2 = (n, label, done, detail, action) => h("li", { class: done ? "done" : !p && n > 1 ? "later" : "next" }, h("b", {}, `${n}. ${label}`), detail ? h("div", { class: "small" }, detail) : null, action);
+    const step2 = (n, label, done, detail) => h("li", { class: done ? "done" : "next" }, h("b", {}, `${n}. ${label}`), detail ? h("div", { class: "small" }, detail) : null);
     mount(
       root4,
       h("h1", {}, "Crew"),
-      p ? profileCard(p, await profileText(p)) : null,
+      profileCard(p, await profileText(p)),
       h(
         "ol",
         { class: "steps" },
-        step2(1, "Register", !!p, p ? `${p.name}, CN ${p.pin}` : "Name, PIN, photo. Your browser keeps your keys.", p ? null : h("button", { class: "primary", onclick: () => go4({ screen: "register" }) }, "Register")),
-        step2(2, "Send your profile to the RTC", !!log.sent, "Download the profile text and attach it, or paste it into a message.", p && !log.sent ? h("button", { onclick: async () => {
-          await set("crewlog", { ...log, sent: now() });
-          go4({ screen: "home" });
-        } }, "I have sent it") : null),
-        step2(3, "Copy the TGBO the RTC sends you", !!log.copied, log.copied ? `${log.copied.title} at ${log.copied.when}` : "Drop or paste the TGBO below.", null),
-        step2(4, "Release", !!log.released, log.released ? `${log.released.title} at ${log.released.when}` : "Fullscreen, one item at a time, then Release track.", null),
-        step2(5, "Read your cancellation", !!log.cancelled, log.cancelled ? `${log.cancelled.grade}% on ${log.cancelled.title}` : "Drop the cancellation the RTC sends back to see your marks and what to read.", null)
+        step2(1, "Copy the test the RTC sends you", !!log.copied, log.copied ? `${log.copied.title} at ${log.copied.when}` : "Drop or paste the test below."),
+        step2(2, "Release", !!log.released, log.released ? `${log.released.title} at ${log.released.when}` : "Fullscreen, one item at a time, then Release track."),
+        step2(3, "Read your cancellation", !!log.cancelled, log.cancelled ? `${log.cancelled.grade}% on ${log.cancelled.title}` : "Drop the cancellation the RTC sends back to see your marks and what to read.")
       ),
+      dropBox2("Drop or paste a test, or a cancellation"),
       h("h2", {}, "Practice"),
       h("p", { class: "small" }, "The same drill \u2014 repeat, fullscreen, one item at a time \u2014 on a built-in test that marks itself. Not for record."),
       h("button", { onclick: () => go4({ screen: "practice" }) }, "Start practice")
     );
   };
-  var renderRegisterCrew = (root4, go4) => renderRegister(root4, "crew", "crew", async (p) => {
-    await set("profile", p);
-    go4({ screen: "registered" });
-  });
-  var renderRegistered = async (root4, go4) => {
-    const p = await me();
-    const t = await profileText(p);
-    mount(root4, h("h1", {}, "Registered"), profileCard(p, t), h("p", {}, "Send this to your RTC. If attachments are blocked, paste the text into the message."), h("textarea", { readonly: true, rows: 6, value: t }), h("button", { onclick: () => go4({ screen: "home" }) }, "Done"));
-  };
   var clearanceSvg = (tgbo, p) => svgFor(`form clearance kind="Clearance" no=${tgbo.clearance} to="CN ${p.pin}" proceed="item 1 \u2192 item ${tgbo.order.length}" until="repeated back" call="before ${fmtTime(tgbo.settings.time)}" complete="${hhmm()}" rtc="${tgbo.rtcName || ""}"`);
   var renderCopy = async (root4, { text: text2, practice }, go4) => {
     const p = await me();
-    if (!p) return mount(root4, h("h1", {}, "Not registered"), h("p", {}, "Register first; a TGBO is addressed to your key."), h("button", { onclick: () => go4({ screen: "register" }) }, "Register"));
+    if (!p) return mount(root4, h("h1", {}, "Not registered"), h("p", {}, "Register first; a test is addressed to your key."));
     let tgbo;
     try {
-      tgbo = practice ? await practiceTGBO(p) : await copyTGBO(text2, p, p.pin);
+      tgbo = practice ? await practiceTest(p) : await copyTest(text2, p, p.pin);
     } catch (e) {
-      return mount(root4, h("h1", {}, "Cannot copy this TGBO"), h("p", { class: "bad" }, e.message), h("button", { onclick: () => go4({ screen: "home" }) }, "Back"));
+      return mount(root4, h("h1", {}, "Cannot copy this test"), h("p", { class: "bad" }, e.message), h("button", { onclick: () => go4({ screen: "home" }) }, "Back"));
     }
     const saved = practice ? null : await get("attempt:" + tgbo.id);
     const repeat = h("input", { placeholder: "Repeat (4 characters)", maxlength: 4, autocomplete: "off", style: { textTransform: "uppercase", maxWidth: "240px" } });
@@ -1025,7 +1036,7 @@ A: Each has a copy; the designation is correct; the engine number is verified vi
       )
     );
   };
-  var practiceTGBO = async (p) => {
+  var practiceTest = async (p) => {
     const { test } = await parseTest(PRACTICE);
     const sid = "practice:" + p.pin;
     const order = shuffled(test.items.map((i) => i.id), sid);
@@ -1244,7 +1255,7 @@ A: Each has a copy; the designation is correct; the engine number is verified vi
   };
 
   // src/sheet.js
-  var newSheet = async (profile) => ({ rtc: profile, trains: [], tgbos: [], releases: [], marks: {}, approvals: [], reports: [], sources: [] });
+  var newSheet = async (profile) => ({ rtc: profile, trains: [], tests: [], releases: [], marks: {}, approvals: [], reports: [], sources: [], pending: [] });
   var newBook = newSheet;
   var saveSheet = async (sheet2, passphrase, kind = "SHEET") => {
     const salt = random(16), iter = 6e5;
@@ -1252,7 +1263,7 @@ A: Each has a copy; the designation is correct; the engine number is verified vi
     const { priv, sign, ...pub } = sheet2.rtc;
     const plain = { ...sheet2, rtc: { ...pub, keys: await exportKeys(sheet2.rtc) } };
     const body = { v: 1, kind: kind.toLowerCase(), kdf: { salt: b64url(salt), iter }, box: await sealJSON(key, plain) };
-    return armor(kind, body, { name: sheet2.rtc.name, role: sheet2.rtc.role, trains: sheet2.trains.length, tgbos: sheet2.tgbos.length });
+    return armor(kind, body, { name: sheet2.rtc.name, role: sheet2.rtc.role, trains: sheet2.trains.length, tests: sheet2.tests.length });
   };
   var saveBook = (book2, passphrase) => saveSheet(book2, passphrase, "BOOK");
   var openSheet = async (text2, passphrase, kind = "SHEET") => {
@@ -1278,13 +1289,13 @@ ${hash}`));
   var checkApproval = async (approval, source) => await sourceHash(source) === approval.hash && verifyBytes(approval.by, approval.signature, utf8(`ballast/approval/1
 ${approval.hash}`));
   var sendReport = async (teacher, directorPub, report) => {
-    const salt = unb64url(report.tgbo);
+    const salt = unb64url(report.test);
     const key = await hkdfKey(await shared(teacher.priv, directorPub), salt, INFO.report);
-    return armor("REPORT", { v: 1, kind: "report", tgbo: report.tgbo, teacher: teacher.pub, box: await sealJSON(key, report) }, { title: report.title, teacher: teacher.name, trains: report.rows.length });
+    return armor("REPORT", { v: 1, kind: "report", test: report.test, teacher: teacher.pub, box: await sealJSON(key, report) }, { title: report.title, teacher: teacher.name, trains: report.rows.length });
   };
   var takeReport = async (text2, director) => {
     const { body } = await dearmor(text2, "REPORT");
-    const key = await hkdfKey(await shared(director.priv, body.teacher), unb64url(body.tgbo), INFO.report);
+    const key = await hkdfKey(await shared(director.priv, body.teacher), unb64url(body.test), INFO.report);
     return { teacher: body.teacher, report: await openJSON(key, body.box) };
   };
 
@@ -1329,6 +1340,13 @@ ${approval.hash}`));
             note(`superintendent ${p.name} on the desk`);
             continue;
           }
+          if (p.role === "none") {
+            sheet.pending = sheet.pending.filter((x) => x.pub !== p.pub);
+            sheet.pending.push(p);
+            note(`registration from ${p.name} (${p.pin}) \u2014 mint it on the Crew tab`);
+            tab = "trains";
+            continue;
+          }
           if (p.role !== "crew") {
             note(`${p.name} is an ${p.role}, not crew`, true);
             continue;
@@ -1347,13 +1365,13 @@ ${approval.hash}`));
           tab = "tests";
         } else if (kind === "RELEASE") {
           const { body } = await dearmor(it.text);
-          const rec = sheet.tgbos.find((t) => t.id === body.tgbo);
-          if (!rec) throw new Error("release is for a TGBO not on this sheet");
+          const rec = sheet.tests.find((t) => t.id === body.test);
+          if (!rec) throw new Error("release is for a test not on this sheet");
           const r = await takeRelease(it.text, sheet.rtc, rec);
           const onSheet = sheet.trains.find((t) => t.pin === r.pin);
           const identity = onSheet && onSheet.pub === r.train ? "ok" : "KEY MISMATCH";
-          sheet.releases = sheet.releases.filter((x) => !(x.tgbo === rec.id && x.pin === r.pin));
-          sheet.releases.push({ tgbo: rec.id, pin: r.pin, train: r.train, identity, attempt: r.attempt, name: onSheet?.name || "?" });
+          sheet.releases = sheet.releases.filter((x) => !(x.test === rec.id && x.pin === r.pin));
+          sheet.releases.push({ test: rec.id, pin: r.pin, train: r.train, identity, attempt: r.attempt, name: onSheet?.name || "?" });
           note(`release CN ${r.pin} for ${rec.title}${identity !== "ok" ? " \u2014 KEY MISMATCH" : ""}`, identity !== "ok");
           tab = "releases";
         } else if (kind) note(`${it.name}: a ${kind} does not belong on the desk`, true);
@@ -1375,10 +1393,23 @@ ${approval.hash}`));
     await intake(items);
     rerender();
   };
+  var mint = async (reg) => {
+    const m = await mintProfile(sheet.rtc, reg, "crew");
+    sheet.pending = sheet.pending.filter((x) => x !== reg);
+    sheet.trains = sheet.trains.filter((t) => t.pin !== m.pin);
+    sheet.trains.push(m);
+    download(`profile-CN${m.pin}.txt`, await profileText(m));
+    note(`minted crew CN ${m.pin} ${m.name} \u2014 send them the profile`);
+    rerender();
+  };
   var trainsTab = () => h(
     "div",
     {},
-    h("p", { class: "small" }, "Drop crew profiles on the desk. One row per PIN; a new key for a known PIN replaces the old one and is noted."),
+    sheet.pending.length ? h("div", { class: "card" }, h("h2", {}, "Registrations to mint"), h("table", {}, sheet.pending.map((r) => h("tr", {}, h("td", {}, avatar(r, 48)), h("td", {}, r.name), h("td", {}, r.pin), h("td", {}, h("button", { class: "primary", onclick: () => mint(r) }, "Mint as crew"), " ", h("button", { onclick: () => {
+      sheet.pending = sheet.pending.filter((x) => x !== r);
+      rerender();
+    } }, "discard")))))) : null,
+    h("p", { class: "small" }, "Drop registrations on the desk and mint them; the minted profile goes back to the crew member. Minted crew profiles from other RTCs are accepted too."),
     h("table", {}, sheet.trains.sort((a, b) => a.pin.localeCompare(b.pin)).map((t) => h("tr", {}, h("td", {}, avatar(t, 48)), h("td", {}, `CN ${t.pin}`), h("td", {}, t.name), h("td", { class: "small" }, t.pub.slice(0, 12) + "\u2026"), h("td", {}, h("button", { onclick: () => {
       sheet.trains = sheet.trains.filter((x) => x !== t);
       rerender();
@@ -1397,11 +1428,11 @@ ${approval.hash}`));
       if (missing.length) return note(`missing assets: ${missing.join(", ")} \u2014 drop them on the desk`, true), rerender();
       if (!sheet.trains.length) return note("no trains on the sheet", true), rerender();
       const approval = await approvalFor(d.source);
-      const { text: text2, record } = await issueTGBO(d.test, sheet.rtc, sheet.trains, sheet.assets, sheet.rtc.name, approval);
-      Object.assign(record, { source: d.source, tgbo: text2, issued: Date.now(), trains: sheet.trains.map((t) => t.pin), approved: !!approval });
-      sheet.tgbos.push(record);
-      download(`${d.test.title.replace(/\W+/g, "-")}.tgbo.txt`, text2);
-      note(`issued ${record.title} to ${sheet.trains.length} train(s) \u2014 complete ${record.hash.slice(0, 4).toUpperCase()}`);
+      const { text: text2, record } = await issueTest(d.test, sheet.rtc, sheet.trains, sheet.assets, sheet.rtc.name, approval);
+      Object.assign(record, { source: d.source, text: text2, issued: Date.now(), trains: sheet.trains.map((t) => t.pin), approved: !!approval });
+      sheet.tests.push(record);
+      download(`${d.test.title.replace(/\W+/g, "-")}.test.txt`, text2);
+      note(`issued ${record.title} to ${sheet.trains.length} crew \u2014 complete ${record.hash.slice(0, 4).toUpperCase()}`);
       rerender();
     };
     const approvedMark = h("span", { class: "small" });
@@ -1412,16 +1443,16 @@ ${approval.hash}`));
     return h(
       "div",
       {},
-      h("p", { class: "small" }, "Drop a test source (.txt), any images it names, and the superintendent's approval if you have one. Issue writes one TGBO with a clearance for every train on the sheet."),
+      h("p", { class: "small" }, "Drop a test source (.txt), any images it names, and the superintendent's approval if you have one. Issue writes one test file with a clearance for every crew member on the sheet."),
       d ? h(
         "div",
         { class: "card" },
         h("b", {}, d.name),
         d.errors.length ? h("ul", { class: "bad" }, d.errors.map((e) => h("li", {}, e))) : h("p", {}, `${d.test.title} \xB7 ${d.test.items.length} items \xB7 ${fmtTime(d.test.settings.time)} \xB7 pass ${Math.round(d.test.settings.pass * 100)}% \xB7 areas: ${d.test.areas.map((a) => a.id).join(", ") || "none"}`, approvedMark),
-        d.errors.length ? null : h("button", { class: "primary", onclick: issue }, `Issue TGBO to ${sheet.trains.length} train(s)`)
+        d.errors.length ? null : h("button", { class: "primary", onclick: issue }, `Issue test to ${sheet.trains.length} crew`)
       ) : h("p", { class: "status" }, "No test source loaded."),
       h("h2", {}, "Issued"),
-      h("table", {}, sheet.tgbos.map((t) => h("tr", {}, h("td", {}, t.title), h("td", { class: "small" }, new Date(t.issued).toLocaleString()), h("td", {}, `${t.trains?.length ?? "?"} clearances`), h("td", { class: t.approved ? "good small" : "small" }, t.approved ? "approved" : "unapproved"), h("td", { class: "complete small" }, t.hash.slice(0, 4).toUpperCase()), h("td", {}, h("button", { onclick: () => download(`${t.title.replace(/\W+/g, "-")}.tgbo.txt`, t.tgbo) }, "download again"))))),
+      h("table", {}, sheet.tests.map((t) => h("tr", {}, h("td", {}, t.title), h("td", { class: "small" }, new Date(t.issued).toLocaleString()), h("td", {}, `${t.trains?.length ?? "?"} clearances`), h("td", { class: t.approved ? "good small" : "small" }, t.approved ? "approved" : "unapproved"), h("td", { class: "complete small" }, t.hash.slice(0, 4).toUpperCase()), h("td", {}, h("button", { onclick: () => download(`${t.title.replace(/\W+/g, "-")}.test.txt`, t.text) }, "download again"))))),
       h("h2", {}, "Assets"),
       h("p", { class: "small" }, Object.keys(sheet.assets).join(", ") || "none"),
       h("h2", {}, "Approvals"),
@@ -1432,9 +1463,9 @@ ${approval.hash}`));
     var _a, _b;
     return (_a = sheet.marks)[_b = `${rec.id}:${pin}`] ?? (_a[_b] = {});
   };
-  var scoredFor = (rec, test) => sheet.releases.filter((r) => r.tgbo === rec.id).map((r) => ({ r, s: scoreAttempt(test, r.attempt, marksFor(rec, r.pin)) }));
+  var scoredFor = (rec, test) => sheet.releases.filter((r) => r.test === rec.id).map((r) => ({ r, s: scoreAttempt(test, r.attempt, marksFor(rec, r.pin)) }));
   var releasesTab = () => {
-    const groups = sheet.tgbos.filter((rec) => sheet.releases.some((r) => r.tgbo === rec.id));
+    const groups = sheet.tests.filter((rec) => sheet.releases.some((r) => r.test === rec.id));
     if (!groups.length) return h("p", { class: "status" }, "No releases yet. Drop release files or pasted RELEASE text on the desk.");
     return h("div", {}, groups.map((rec) => h("div", { class: "card" }, h("h2", {}, rec.title), rec._test ? releaseTable(rec, rec._test) : h("button", { onclick: async () => {
       rec._test = (await parseTest(rec.source)).test;
@@ -1466,14 +1497,14 @@ ${approval.hash}`));
           h("td", {}, h("button", { onclick: () => {
             view = { rec, test, r };
             rerender();
-          } }, "review"), " ", h("button", { onclick: async () => download(`cancel-CN${r.pin}.txt`, await cancelTGBO(rec, sheet.rtc, r.train, r.pin, s)) }, "cancel (send marks)"))
+          } }, "review"), " ", h("button", { onclick: async () => download(`cancel-CN${r.pin}.txt`, await cancelTest(rec, sheet.rtc, r.train, r.pin, s)) }, "cancel (send marks)"))
         ))
       ),
       h(
         "div",
         { class: "row" },
         h("button", { onclick: async () => {
-          for (const { r, s } of scored) download(`cancel-CN${r.pin}.txt`, await cancelTGBO(rec, sheet.rtc, r.train, r.pin, s));
+          for (const { r, s } of scored) download(`cancel-CN${r.pin}.txt`, await cancelTest(rec, sheet.rtc, r.train, r.pin, s));
         } }, "Cancel all"),
         h("button", { onclick: () => download(`${rec.title.replace(/\W+/g, "-")}-summary.csv`, csv(test, scored)) }, "Summary CSV"),
         sheet.superintendent ? h("button", { onclick: async () => download(`report-${rec.title.replace(/\W+/g, "-")}.txt`, await sendReport(sheet.rtc, sheet.superintendent.pub, reportFor(rec, test, scored, sum))) }, `Report to ${sheet.superintendent.name}`) : h("span", { class: "small" }, "Drop the superintendent's profile on the desk to send reports.")
@@ -1485,7 +1516,7 @@ ${approval.hash}`));
     );
   };
   var reportFor = (rec, test, scored, sum) => ({
-    tgbo: rec.id,
+    test: rec.id,
     title: rec.title,
     hash: rec.hash,
     approved: !!rec.approved,
@@ -1509,7 +1540,7 @@ ${approval.hash}`));
     const { rec, test, r } = view;
     const marks = marksFor(rec, r.pin);
     const s = scoreAttempt(test, r.attempt, marks);
-    const raw = { items: JSON.parse(atob(rec.tgbo.split("\n\n")[1].replace(/-----END[\s\S]*$/, "").replace(/\s+/g, ""))).items };
+    const raw = { items: JSON.parse(atob(rec.text.split("\n\n")[1].replace(/-----END[\s\S]*$/, "").replace(/\s+/g, ""))).items };
     const canvas = h("canvas", { width: 900, height: 600, style: { width: "100%", border: "1px solid #ddd" } });
     const order = r.attempt.events.filter((e) => e[1] === "show").map((e) => e[2]).filter((v, i, a) => a.indexOf(v) === i);
     let cursor = r.attempt.events.length;
@@ -1564,11 +1595,10 @@ ${approval.hash}`));
   var render = async (r, ctx2, g) => {
     root = r;
     go = g;
-    if (ctx2.register) return renderRegister(root, "rtc", "RTC", async (p) => {
-      sheet = await newSheet(p);
+    if (ctx2.fresh) {
+      sheet = await newSheet(await get("profile"));
       note("new sheet");
-      go({ screen: "rtc" });
-    }, { extractable: true });
+    }
     if (ctx2.sheetText) {
       const pw = prompt("Sheet passphrase");
       if (pw == null) return go({ screen: "home" });
@@ -1580,9 +1610,12 @@ ${approval.hash}`));
         return go({ screen: "home", error: e.message });
       }
     }
-    if (!sheet) return mount(root, h("h1", {}, "RTC"), h("p", {}, "Your desk is a sheet file, encrypted under your passphrase. Open yours, or register to start one."), h("div", { class: "row" }, h("button", { class: "primary", onclick: () => go({ screen: "rtc", register: true }) }, "Register and start a sheet"), h("label", { class: "btn" }, "Open a sheet", h("input", { type: "file", style: { display: "none" }, onchange: async (e) => go({ screen: "rtc", sheetText: await readFileText(e.target.files[0]) }) }))), h("button", { onclick: () => go({ screen: "home" }) }, "Home"));
+    if (!sheet) {
+      const p = await get("profile");
+      return mount(root, h("h1", {}, "RTC"), profileCard(p, await profileText(p)), h("p", {}, "Your desk is a sheet file, encrypted under your passphrase. Open yours, or start a new one."), h("div", { class: "row" }, h("button", { class: "primary", onclick: () => go({ screen: "rtc", fresh: true }) }, "Start a sheet"), h("label", { class: "btn" }, "Open a sheet", h("input", { type: "file", style: { display: "none" }, onchange: async (e) => go({ screen: "rtc", sheetText: await readFileText(e.target.files[0]) }) }))));
+    }
     for (const k of ["marks", "assets"]) sheet[k] ?? (sheet[k] = {});
-    for (const k of ["releases", "approvals", "trains", "tgbos"]) sheet[k] ?? (sheet[k] = []);
+    for (const k of ["releases", "approvals", "trains", "tests", "pending"]) sheet[k] ?? (sheet[k] = []);
     if (ctx2.incoming) {
       await intake(ctx2.incoming);
       ctx2.incoming = null;
@@ -1593,7 +1626,7 @@ ${approval.hash}`));
         if (!pass) return;
       }
       const { draft, ...persist } = sheet;
-      for (const t of persist.tgbos) delete t._test;
+      for (const t of persist.tests) delete t._test;
       download(`sheet-${sheet.rtc.name.replace(/\W+/g, "-")}.txt`, await saveSheet(persist, pass));
       note("sheet saved");
       rerender();
@@ -1608,14 +1641,14 @@ ${approval.hash}`));
         drop.classList.remove("over");
         takeFiles(e.dataTransfer.files);
       } },
-      "Drop profiles, test sources, images, approvals, releases here",
+      "Drop registrations, test sources, images, approvals, releases here",
       h("br"),
       h("label", { class: "btn", style: { marginTop: "8px", display: "inline-block" } }, "Choose files", h("input", { type: "file", multiple: true, style: { display: "none" }, onchange: (e) => takeFiles(e.target.files) }))
     );
     const paste = h("textarea", { rows: 3, placeholder: "Or paste PROFILE / APPROVAL / RELEASE text\u2026" });
     mount(
       root,
-      h("div", { class: "bar" }, h("span", { class: "row" }, avatar(sheet.rtc, 28), ` RTC ${sheet.rtc.name}`), h("span", {}, `${sheet.trains.length} trains \xB7 ${sheet.tgbos.length} TGBOs \xB7 ${sheet.releases.length} releases`), h("button", { onclick: save }, "Save sheet")),
+      h("div", { class: "bar" }, h("span", { class: "row" }, avatar(sheet.rtc, 28), ` RTC ${sheet.rtc.name}`), h("span", {}, `${sheet.trains.length} crew \xB7 ${sheet.tests.length} tests \xB7 ${sheet.releases.length} releases`), h("button", { onclick: save }, "Save sheet")),
       h("div", { class: "row" }, h("div", { style: { flex: 1 } }, drop), profileCard(sheet.rtc, await profileText(sheet.rtc))),
       h("div", { class: "row" }, paste, h("button", { onclick: async () => {
         await intake([{ name: "pasted", text: paste.value }]);
@@ -1623,11 +1656,14 @@ ${approval.hash}`));
         rerender();
       } }, "Take")),
       notes.length ? h("ul", { class: "small" }, notes.map((n) => h("li", { class: n.bad ? "bad" : "" }, n.m))) : null,
-      view ? reviewView() : h("div", {}, h("div", { class: "tabs" }, ["trains", "tests", "releases"].map((t) => h("button", { class: tab === t ? "on" : "", onclick: () => {
+      view ? reviewView() : h("div", {}, h("div", { class: "tabs" }, [["trains", "Crew"], ["tests", "Tests"], ["releases", "Releases"]].map(([t, l]) => h("button", { class: tab === t ? "on" : "", onclick: () => {
         tab = t;
         rerender();
-      } }, t[0].toUpperCase() + t.slice(1)))), tab === "trains" ? trainsTab() : tab === "tests" ? testsTab() : releasesTab()),
-      h("p", { class: "small" }, h("button", { onclick: () => go({ screen: "home" }) }, "Home"))
+      } }, l))), tab === "trains" ? trainsTab() : tab === "tests" ? testsTab() : releasesTab()),
+      h("p", { class: "small" }, h("button", { onclick: () => {
+        sheet = null;
+        go({ screen: "home" });
+      } }, "Close desk"))
     );
   };
 
@@ -1649,6 +1685,13 @@ ${approval.hash}`));
         const kind = sniff(it.text);
         if (kind === "PROFILE") {
           const p = await readProfile(it.text);
+          if (p.role === "none") {
+            book.pending = book.pending.filter((x) => x.pub !== p.pub);
+            book.pending.push(p);
+            note2(`registration from ${p.name} (${p.pin}) \u2014 mint it on the RTCs tab`);
+            tab2 = "rtcs";
+            continue;
+          }
           if (p.role !== "rtc") {
             note2(`${p.name} is ${p.role}, not an RTC`, true);
             continue;
@@ -1660,7 +1703,7 @@ ${approval.hash}`));
         } else if (kind === "REPORT") {
           const { teacher, report } = await takeReport(it.text, book.rtc);
           const rtc = book.trains.find((t) => t.pub === teacher);
-          book.reports = book.reports.filter((x) => x.report.tgbo !== report.tgbo);
+          book.reports = book.reports.filter((x) => x.report.test !== report.test);
           book.reports.push({ teacher, rtcName: rtc?.name || report.rtc?.name || "?", known: !!rtc, report });
           note2(`report: ${report.title} from ${rtc?.name || "unknown RTC"}${rtc ? "" : " (not on the book)"}`, !rtc);
           tab2 = "reports";
@@ -1688,11 +1731,28 @@ ${approval.hash}`));
     await intake2(items);
     rerender2();
   };
-  var rtcsTab = () => h("table", {}, book.trains.map((t) => h("tr", {}, h("td", {}, avatar(t, 48)), h("td", {}, t.name), h("td", {}, t.pin), h("td", { class: "small" }, t.pub.slice(0, 12) + "\u2026"))), book.trains.length ? null : h("tr", {}, h("td", { class: "status" }, "Drop RTC profiles here.")));
+  var mint2 = async (reg) => {
+    const m = await mintProfile(book.rtc, reg, "rtc");
+    book.pending = book.pending.filter((x) => x !== reg);
+    book.trains = book.trains.filter((t) => t.pin !== m.pin);
+    book.trains.push(m);
+    download(`profile-RTC-${m.pin}.txt`, await profileText(m));
+    note2(`minted RTC ${m.name} \u2014 send them the profile`);
+    rerender2();
+  };
+  var rtcsTab = () => h(
+    "div",
+    {},
+    book.pending.length ? h("div", { class: "card" }, h("h2", {}, "Registrations to mint"), h("table", {}, book.pending.map((r) => h("tr", {}, h("td", {}, avatar(r, 48)), h("td", {}, r.name), h("td", {}, r.pin), h("td", {}, h("button", { class: "primary", onclick: () => mint2(r) }, "Mint as RTC"), " ", h("button", { onclick: () => {
+      book.pending = book.pending.filter((x) => x !== r);
+      rerender2();
+    } }, "discard")))))) : null,
+    h("table", {}, book.trains.map((t) => h("tr", {}, h("td", {}, avatar(t, 48)), h("td", {}, t.name), h("td", {}, t.pin), h("td", { class: "small" }, `since ${t.minted?.start || "?"}`), h("td", { class: "small" }, t.pub.slice(0, 12) + "\u2026"))), book.trains.length ? null : h("tr", {}, h("td", { class: "status" }, "Drop RTC registrations here and mint them.")))
+  );
   var inventoryTab = () => h(
     "div",
     {},
-    h("p", { class: "small" }, "Drop test sources. Approve signs the source's hash; give the approval file to the RTC, who drops it on their desk. A TGBO built from a byte-identical source then carries the approval."),
+    h("p", { class: "small" }, "Drop test sources. Approve signs the source's hash; give the approval file to the RTC, who drops it on their desk. A test built from a byte-identical source then carries the approval."),
     h(
       "table",
       {},
@@ -1747,11 +1807,10 @@ ${approval.hash}`));
   var render2 = async (r, ctx2, g) => {
     root2 = r;
     go2 = g;
-    if (ctx2.register) return renderRegister(root2, "superintendent", "superintendent", async (p) => {
-      book = await newBook(p);
+    if (ctx2.fresh) {
+      book = await newBook(await get("profile"));
       note2("new book");
-      go2({ screen: "super" });
-    }, { extractable: true });
+    }
     if (ctx2.bookText) {
       const pw = prompt("Book passphrase");
       if (pw == null) return go2({ screen: "home" });
@@ -1763,8 +1822,11 @@ ${approval.hash}`));
         return go2({ screen: "home", error: e.message });
       }
     }
-    if (!book) return mount(root2, h("h1", {}, "Superintendent"), h("p", {}, "Your book holds the RTCs, the approved tests, and every report. It is a file encrypted under your passphrase."), h("div", { class: "row" }, h("button", { class: "primary", onclick: () => go2({ screen: "super", register: true }) }, "Register and start a book"), h("label", { class: "btn" }, "Open a book", h("input", { type: "file", style: { display: "none" }, onchange: async (e) => go2({ screen: "super", bookText: await readFileText(e.target.files[0]) }) }))), h("button", { onclick: () => go2({ screen: "home" }) }, "Home"));
-    for (const k of ["trains", "sources", "reports"]) book[k] ?? (book[k] = []);
+    if (!book) {
+      const p = await get("profile");
+      return mount(root2, h("h1", {}, "Superintendent"), profileCard(p, await profileText(p)), h("p", {}, "Your book holds the RTCs, the approved tests, and every report. It is a file encrypted under your passphrase."), h("div", { class: "row" }, h("button", { class: "primary", onclick: () => go2({ screen: "super", fresh: true }) }, "Start a book"), h("label", { class: "btn" }, "Open a book", h("input", { type: "file", style: { display: "none" }, onchange: async (e) => go2({ screen: "super", bookText: await readFileText(e.target.files[0]) }) }))));
+    }
+    for (const k of ["trains", "sources", "reports", "pending"]) book[k] ?? (book[k] = []);
     if (ctx2.incoming) {
       await intake2(ctx2.incoming);
       ctx2.incoming = null;
@@ -1785,7 +1847,7 @@ ${approval.hash}`));
       e.preventDefault();
       drop.classList.remove("over");
       takeFiles2(e.dataTransfer.files);
-    } }, "Drop RTC profiles, test sources, reports here", h("br"), h("label", { class: "btn", style: { marginTop: "8px", display: "inline-block" } }, "Choose files", h("input", { type: "file", multiple: true, style: { display: "none" }, onchange: (e) => takeFiles2(e.target.files) })));
+    } }, "Drop RTC registrations, test sources, reports here", h("br"), h("label", { class: "btn", style: { marginTop: "8px", display: "inline-block" } }, "Choose files", h("input", { type: "file", multiple: true, style: { display: "none" }, onchange: (e) => takeFiles2(e.target.files) })));
     const paste = h("textarea", { rows: 3, placeholder: "Or paste PROFILE / REPORT text\u2026" });
     mount(
       root2,
@@ -1802,7 +1864,10 @@ ${approval.hash}`));
         rerender2();
       } }, l))),
       tab2 === "reports" ? reportsTab() : tab2 === "inventory" ? inventoryTab() : rtcsTab(),
-      h("p", { class: "small" }, h("button", { onclick: () => go2({ screen: "home" }) }, "Home"))
+      h("p", { class: "small" }, h("button", { onclick: () => {
+        book = null;
+        go2({ screen: "home" });
+      } }, "Close book"))
     );
   };
 
@@ -1813,41 +1878,42 @@ ${approval.hash}`));
     ctx = next;
     render3();
   };
-  var roleKey = "ballast.role";
-  var remember = (r) => {
-    try {
-      localStorage.setItem(roleKey, r);
-    } catch {
-    }
-  };
-  var remembered = () => {
-    try {
-      return localStorage.getItem(roleKey);
-    } catch {
-      return null;
-    }
+  var me2 = () => get("profile");
+  var acceptMint = async (text2) => {
+    const p = await me2();
+    if (!p) throw new Error("register first");
+    const m = await readProfile(text2);
+    if (m.pub !== p.pub || m.sig !== p.sig) throw new Error("that profile is not for the keys in this browser");
+    if (m.role === "none" || !await checkMint(m)) throw new Error("that profile has no minted role");
+    await set("profile", { ...p, role: m.role, name: m.name, photo: m.photo || p.photo, minted: m.minted });
   };
   var openText = async (text2, name = "") => {
     const kind = sniff(text2);
-    if (kind === "TGBO") return go3({ screen: "copy", text: text2 });
-    if (kind === "CANCEL") return go3({ screen: "cancel", text: text2 });
-    if (kind === "SHEET") return go3({ screen: "rtc", sheetText: text2 });
-    if (kind === "BOOK") return go3({ screen: "super", bookText: text2 });
-    if (kind === "REPORT") return go3({ screen: "super", incoming: [{ name, text: text2 }] });
-    if (kind === "RELEASE" || kind === "APPROVAL" || kind === "PROFILE") return go3({ screen: "rtc", incoming: [{ name, text: text2 }] });
-    if (/^#|\n---/.test(text2)) return go3({ screen: "rtc", incoming: [{ name, text: text2, source: true }] });
-    go3({ screen: "home", error: `Not a Ballast file${name ? ": " + name : ""}` });
+    const p = await me2();
+    try {
+      if (kind === "PROFILE" && p && (p.role === "none" || !p.minted)) {
+        await acceptMint(text2);
+        return go3({ screen: "home" });
+      }
+      if (kind === "TEST") return go3({ screen: "copy", text: text2 });
+      if (kind === "CANCEL") return go3({ screen: "cancel", text: text2 });
+      if (kind === "SHEET") return go3({ screen: "rtc", sheetText: text2 });
+      if (kind === "BOOK") return go3({ screen: "super", bookText: text2 });
+      if (kind === "REPORT") return go3({ screen: "super", incoming: [{ name, text: text2 }] });
+      if (kind === "PROFILE" && p?.role === "superintendent") return go3({ screen: "super", incoming: [{ name, text: text2 }] });
+      if (kind === "RELEASE" || kind === "APPROVAL" || kind === "PROFILE") return go3({ screen: "rtc", incoming: [{ name, text: text2 }] });
+      if (/^#|\n---/.test(text2)) return go3({ screen: p?.role === "superintendent" ? "super" : "rtc", incoming: [{ name, text: text2, source: true }] });
+      go3({ screen: "home", error: `Not a Ballast file${name ? ": " + name : ""}` });
+    } catch (e) {
+      go3({ screen: "home", error: e.message });
+    }
   };
   var openFiles = async (files) => {
     const f = [...files][0];
     if (f) openText(await readFileText(f), f.name);
   };
-  var renderLanding = () => {
-    const card = (role, title, what, screen) => h("button", { class: "rolecard", onclick: () => {
-      remember(role);
-      go3({ screen });
-    } }, h("b", {}, title), h("span", {}, what));
-    const paste = h("textarea", { rows: 4, placeholder: "Or drop / paste any Ballast file \u2014 it opens where it belongs." });
+  var dropBox = (label) => {
+    const paste = h("textarea", { rows: 4, placeholder: label });
     const drop = h(
       "div",
       { class: "drop", ondragover: (e) => {
@@ -1861,36 +1927,42 @@ ${approval.hash}`));
       paste,
       h("div", { class: "row" }, h("button", { onclick: () => paste.value.trim() && openText(paste.value) }, "Open"), h("label", { class: "btn" }, "Choose a file", h("input", { type: "file", style: { display: "none" }, onchange: (e) => openFiles(e.target.files) })))
     );
+    return drop;
+  };
+  var renderWaiting = async (p) => {
+    const text2 = await profileText({ ...p, role: "none", minted: void 0 });
+    const root_ = () => go3({ screen: "home" });
     mount(
       root3,
-      h("h1", {}, "Ballast"),
-      h("p", { class: "small" }, "A test that stays on the rails. Nothing leaves this page."),
+      h("h1", {}, "Registered \u2014 waiting for a role"),
+      profileCard(p, text2),
+      h("p", {}, "Send this registration to your RTC (a crew role) or to the superintendent (an RTC role). They send back your profile; drop it here."),
+      h("textarea", { readonly: true, rows: 6, value: text2 }),
       ctx.error ? h("p", { class: "bad" }, ctx.error) : null,
+      dropBox("Drop or paste the profile you get back"),
       h(
-        "div",
-        { class: "roles" },
-        card("crew", "Crew", "I am writing a test.", "home"),
-        card("rtc", "RTC", "I am giving a test.", "rtc"),
-        card("superintendent", "Superintendent", "I approve tests and read results across classes.", "super")
-      ),
-      drop
+        "details",
+        {},
+        h("summary", { class: "small" }, "Nobody to mint me"),
+        h("p", { class: "small" }, "The first superintendent mints themself. Only do this if you are running the program."),
+        h("button", { onclick: async () => {
+          const m = await mintProfile({ ...p, role: "superintendent" }, p, "superintendent");
+          await set("profile", { ...p, ...m });
+          root_();
+        } }, "Start as superintendent")
+      )
     );
   };
   var render3 = async () => {
+    const p = await me2();
+    if (ctx.screen === "landing" || !p && ctx.screen === "home") return renderRegister(root3, async (np) => {
+      await set("profile", np);
+      go3({ screen: "home" });
+    });
+    if (p && (p.role === "none" || !p.minted) && !["work", "practice", "marks", "released"].includes(ctx.screen)) return renderWaiting(p);
     switch (ctx.screen) {
-      case "landing":
-        return renderLanding();
-      case "home": {
-        if (!remembered()) return renderLanding();
-        const r = remembered();
-        if (r === "rtc") return render(root3, ctx, go3);
-        if (r === "superintendent") return render2(root3, ctx, go3);
-        return renderHome(root3, go3);
-      }
-      case "register":
-        return renderRegisterCrew(root3, go3);
-      case "registered":
-        return renderRegistered(root3, go3);
+      case "home":
+        return p.role === "rtc" ? render(root3, ctx, go3) : p.role === "superintendent" ? render2(root3, ctx, go3) : renderHome(root3, go3, dropBox);
       case "copy":
         return renderCopy(root3, ctx, go3);
       case "practice":
@@ -1908,16 +1980,25 @@ ${approval.hash}`));
       case "super":
         return render2(root3, ctx, go3);
       default:
-        return renderLanding();
+        return go3({ screen: "home" });
     }
   };
-  document.body.prepend(h("nav", { class: "top" }, h("a", { href: "#", onclick: (e) => {
-    e.preventDefault();
-    go3({ screen: "home" });
-  } }, "Ballast"), " \xB7 ", h("a", { href: "#", onclick: (e) => {
-    e.preventDefault();
-    go3({ screen: "landing" });
-  } }, "switch role")));
+  document.body.prepend(h(
+    "nav",
+    { class: "top" },
+    h("a", { href: "#", onclick: (e) => {
+      e.preventDefault();
+      go3({ screen: "home" });
+    } }, "Ballast"),
+    " \xB7 ",
+    h("a", { href: "#", onclick: async (e) => {
+      e.preventDefault();
+      if (confirm("Forget this browser's profile and keys? Any role minted to them is lost.")) {
+        await del("profile");
+        go3({ screen: "landing" });
+      }
+    } }, "forget me")
+  ));
   window.addEventListener("dragover", (e) => e.preventDefault());
   window.addEventListener("drop", (e) => e.preventDefault());
   render3();

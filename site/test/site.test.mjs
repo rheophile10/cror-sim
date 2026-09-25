@@ -80,7 +80,7 @@ for (const transport of ['file', 'http']) {
       await p.locator('a.option', { hasText: 'Ballast' }).click();
       await p.waitForLoadState('load');
       assert.equal(await p.title(), 'Ballast');
-      await p.locator('.rolecard', { hasText: 'Crew' }).waitFor();
+      await p.locator('input[placeholder="Name"]').waitFor();
       assert.deepEqual(errors, []);
       await p.context().close();
     });
