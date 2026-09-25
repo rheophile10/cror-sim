@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-nlW5is+XMUNQHVYEh/tidz8YOdHhp7CTmMq4AcetzoU='; style-src 'sha256-M8hlWcjtvoPwmIScNCi6q00hPofBkJtLIbmnBerTGJs='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-5jbhlwvBcfwrDJHHkY2YDhPfo/WxOk7ZvNa6nnF6lDI='; style-src 'sha256-M8hlWcjtvoPwmIScNCi6q00hPofBkJtLIbmnBerTGJs='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast</title>
 <style>:root { --ink:#111; --bg:#fff; --mute:#666; --line:#ddd; --accent:#1d4ed8; --good:#15803d; --bad:#b91c1c; }
 * { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 Arial, sans-serif; -webkit-user-select:none; user-select:none }
@@ -2458,11 +2458,17 @@ ${box}`);
     const ta = h("textarea", { rows: 14, value: editor.text, placeholder: '# Title\ntime: 60m\npass: 90%\nareas: signals "Signals" \xB7 switches "Switches"\n\n---\ntype: mc\narea: signals\nref: CROR 27(b)\nQ: \u2026\n*a) right\nb) wrong\n', style: { fontFamily: "monospace", fontSize: "13px", maxWidth: "none" }, oninput: (e) => {
       editor.text = e.target.value;
     } });
+    const add = (tpl) => {
+      editor = { ...editor, text: (editor.text.trim() ? editor.text.replace(/\s+$/, "") + "\n---\n" : "# New test\ntime: 30m\npass: 90%\nshuffle: items options\nback: no\n\n---\n") + tpl };
+      rerender2();
+    };
+    const T = { mc: "type: mc\nref: CROR \nQ: \n*a) \nb) \nc) \n", match: "type: match\nref: CROR \nQ: Match each term with its meaning.\nL:  = \nL:  = \nL:  = \n", short: "type: short\nref: CROR \nworth: 2\nQ: \nA: \n" };
     return h(
       "div",
       { class: "card" },
       h("h2", {}, "Write a test"),
-      h("p", { class: "small" }, "The source format is in SPEC.md \xA710. Validate shows problems; Add puts it in the inventory, where you can approve it."),
+      h("p", { class: "small" }, "The source format is in SPEC.md \xA710: a title and settings, then items separated by --- lines. It is plain text \u2014 Notepad works as well as this box. Validate shows problems; Add puts it in the inventory, where you can approve it."),
+      h("div", { class: "row" }, h("button", { onclick: () => add(T.mc) }, "+ multiple choice"), h("button", { onclick: () => add(T.match) }, "+ matching"), h("button", { onclick: () => add(T.short) }, "+ short answer")),
       ta,
       editor.errors?.length ? h("ul", { class: "bad small" }, editor.errors.map((e) => h("li", {}, e))) : editor.errors ? h("p", { class: "good small" }, `Valid: ${editor.test.title}, ${editor.test.items.length} items`) : null,
       h("div", { class: "row" }, h("button", { onclick: async () => {
