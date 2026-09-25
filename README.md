@@ -46,8 +46,8 @@ detail, the scene JSON schema, and an honest list of what it does not do yet.
 ## cror.ca
 
 The published site is assembled in [`site/`](site): a menu at the root with the
-viewer above at `sim/`, the conductor game at `game/`, and Ballast (the test
-system) at `ballast/`. The game and Ballast come from local projects, so their
+viewer above at `sim/`, the conductor game at `game/`, Ballast (the test
+system) at `ballast/` and its tutorial at `tutorial/`. The game and Ballast come from local projects, so their
 builds are committed in `site/vendor/`:
 
 ```sh

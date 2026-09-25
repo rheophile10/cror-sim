@@ -54,11 +54,11 @@ for (const transport of ['file', 'http']) {
       return { p, errors, scripts };
     };
 
-    test('the menu offers three places and loads none of them', async () => {
+    test('the menu offers four places and loads none of them', async () => {
       const { p, errors, scripts } = await page();
       await p.goto(base() + 'index.html');
       const links = await p.locator('a.option').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
-      assert.deepEqual(links, ['sim/index.html', 'game/index.html', 'ballast/index.html']);
+      assert.deepEqual(links, ['sim/index.html', 'game/index.html', 'ballast/index.html', 'tutorial/index.html']);
       assert.deepEqual(scripts, []);
       assert.deepEqual(errors, []);
       await p.context().close();
@@ -77,11 +77,23 @@ for (const transport of ['file', 'http']) {
     test('ballast opens from the menu', async () => {
       const { p, errors } = await page();
       await p.goto(base() + 'index.html');
-      await p.locator('a.option', { hasText: 'Ballast' }).click();
+      await p.locator('a.option[href="ballast/index.html"]').click();
       await p.waitForLoadState('load');
       assert.equal(await p.title(), 'Ballast');
       await p.locator('input[placeholder="Name"]').waitFor();
       assert.deepEqual(errors, []);
+      await p.context().close();
+    });
+
+    test('the tutorial opens from the menu and embeds the real ballast', async () => {
+      const { p, errors } = await page();
+      await p.goto(base() + 'index.html');
+      await p.locator('a.option', { hasText: 'Ballast tutorial' }).click();
+      await p.waitForLoadState('load');
+      await p.locator('text=PRETEND COMPUTER').waitFor();
+      await p.dblclick('.dicon:has-text("Browser")');
+      await p.frameLocator('iframe.app').locator('input[placeholder="Name"]').waitFor();
+      assert.deepEqual(errors.filter((e) => !/sandbox/.test(e)), []);
       await p.context().close();
     });
 

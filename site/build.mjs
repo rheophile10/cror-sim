@@ -6,6 +6,7 @@
  *   sim/index.html      the current viewer, from ../world-sim-app/dist (build it first)
  *   game/index.html     the conductor game, from vendor/
  *   ballast/index.html  the test system, from vendor/ (built in ~/projects/ballast)
+ *   tutorial/index.html the Ballast tutorial, from vendor/ (built in ~/projects/ballast/tutorial)
  *
  * Every link is a relative path to a named file, so the folder works from
  * file:// as well as from cror.ca.
@@ -31,4 +32,5 @@ await writeFile(join(DIST, 'index.html'), fill(await readFile(join(HERE, 'index.
 await cp(join(SIM_DIST, 'index.html'), join(DIST, 'sim', 'index.html'));
 await cp(join(VENDOR, 'game'), join(DIST, 'game'), { recursive: true });
 await cp(join(VENDOR, 'ballast'), join(DIST, 'ballast'), { recursive: true });
-console.log('dist/: menu, sim, game, ballast');
+await cp(join(VENDOR, 'tutorial'), join(DIST, 'tutorial'), { recursive: true });
+console.log('dist/: menu, sim, game, ballast, tutorial');
