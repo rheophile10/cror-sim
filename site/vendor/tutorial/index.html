@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-CqPFQX+uqkDNnfHV51c4FPR3gteqD/eJWZtPhFMeOzc='; style-src 'sha256-9zB5hZ5Q2lUsB6AzomEWTqEAGuj7M/LkgN+IZ8Tcrm8='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Zu7GPwTKtRm55aLegcpLO3StRQ3+AXNOFIKGVVU3wlk='; style-src 'sha256-9zB5hZ5Q2lUsB6AzomEWTqEAGuj7M/LkgN+IZ8Tcrm8='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast tutorial</title>
 <style>* { box-sizing:border-box } html, body { margin:0; height:100%; font:14px/1.4 "Segoe UI", Arial, sans-serif; overflow:hidden; background:#0b3d5c }
 .desk { position:absolute; inset:0; background:radial-gradient(ellipse at 30% 20%, #1e6a8f 0%, #0b3d5c 55%, #072a40 100%); overflow:hidden }
@@ -222,8 +222,8 @@ ${by.sig}`;
   };
 
   // tutorial/src/os.js
-  var FOLDERS = ["Inbox", "Registrations", "Tests", "Releases", "Class profiles", "Outbox"];
-  var initial = () => ({ windows: [], files: [], cwd: "Inbox", z: 1, sel: null, toast: null, clock: "" });
+  var FOLDERS = ["Ballast", "Inbox", "Registrations", "Tests", "Releases", "Class profiles", "Outbox"];
+  var initial = () => ({ windows: [], files: [{ id: "ballast", folder: "Ballast", name: "ballast.html", text: "", from: "IT (saved from cror.ca/ballast)", at: Date.now() - 864e5 * 30, fresh: false }], cwd: "Ballast", z: 1, sel: null, toast: null, clock: "" });
   var id = () => Math.random().toString(36).slice(2, 8);
   var openWindow = (s, kind, title, extra = {}) => {
     const existing = s.windows.find((w2) => w2.kind === kind);
@@ -232,6 +232,7 @@ ${by.sig}`;
     const w = { id: id(), kind, title, x: 60 + n * 30, y: 40 + n * 24, w: kind === "browser" ? 980 : 720, h: kind === "browser" ? 700 : 460, z: s.z + 1, min: false, ...extra };
     return { ...s, windows: [...s.windows, w], z: s.z + 1 };
   };
+  var setUrl = (s, wid, url, title) => ({ ...s, windows: s.windows.map((w) => w.id === wid ? { ...w, url, title } : w) });
   var focus = (s, wid) => ({ ...s, z: s.z + 1, windows: s.windows.map((w) => w.id === wid ? { ...w, z: s.z + 1, min: false } : w) });
   var move = (s, wid, x, y) => ({ ...s, windows: s.windows.map((w) => w.id === wid ? { ...w, x, y } : w) });
   var close = (s, wid) => {
@@ -318,7 +319,7 @@ ${by.sig}`;
           files.length ? files.map((f) => h("div", { class: "file" + (s.sel === f.id ? " sel" : "") + (f.fresh ? " fresh" : ""), onclick: (e) => act2(e.detail >= 2 ? "open-file" : "select", f.id) }, h("span", {}, ICON[ext(f.name)] || "\u{1F4C4}", " ", f.name), h("span", { class: "small" }, f.from), h("span", { class: "small" }, new Date(f.at).toLocaleTimeString()))) : h("div", { class: "empty" }, "This folder is empty.")
         )
       ),
-      h("div", { class: "status" }, `${files.length} item(s)`, s.sel ? h("button", { class: "openwith", onclick: () => act2("open-file", s.sel) }, "Open with Ballast") : null)
+      h("div", { class: "status" }, `${files.length} item(s)`, s.sel ? h("button", { class: "openwith", onclick: () => act2("open-file", s.sel) }, /\.html$/.test(s.files.find((f) => f.id === s.sel)?.name || "") ? "Open" : "Open with Ballast") : null)
     );
   };
   var frames = /* @__PURE__ */ new Map();
@@ -351,7 +352,7 @@ ${by.sig}`;
     "div",
     { class: "browser" },
     h("div", { class: "tabs" }, h("span", { class: "tab on" }, "\u{1FAA8} Ballast"), h("button", { class: "newtab", title: "New tab", onclick: () => act2("new-tab") }, "+")),
-    h("div", { class: "urlbar" }, h("span", {}, "\u{1F512}"), h("input", { readonly: true, value: "https://cror.ca/ballast/" })),
+    h("div", { class: "urlbar" }, h("span", {}, "\u{1F512}"), h("input", { readonly: true, value: w.url || "https://cror.ca/ballast/" })),
     (frameFor(w), h("div", { class: "appslot", "data-slot": w.id }))
   );
 
@@ -362,7 +363,12 @@ ${by.sig}`;
   var PHASES = ["superintendent", "rtc", "crew"];
   var steps = [
     // ---------- superintendent
-    { phase: "superintendent", title: "Welcome", text: "You are about to run a training program end to end: first as the superintendent, then as an RTC, then as crew. The desktop, the shared drive and the browser are pretend; Ballast, inside the browser, is real. Open the browser from the desktop.", done: (st2) => st2.windows.some((w) => w.kind === "browser") },
+    { phase: "superintendent", title: "Welcome", text: "You are about to run a training program end to end: first as the superintendent, then as an RTC, then as crew. The desktop, the shared drive and the browser are pretend; Ballast, inside the browser, is real.\n\nThere are two ways to run Ballast. The recommended one: a saved copy, ballast.html, on the shared drive \u2014 IT put one there. Open the shared drive, go to the Ballast folder, and open ballast.html. (The Browser icon on the desktop is the other way: cror.ca/ballast.)", done: (st2) => st2.windows.some((w) => w.kind === "browser") },
+    info("superintendent", "Shared drive or cror.ca?", [
+      "Both open the same page. From cror.ca you always get the latest version and nothing to keep \u2014 but you depend on the site being reachable, and a website can change under you. From ballast.html on the shared drive you run a fixed file: IT can hash it once and audit it, it works with no internet, every crew member runs byte-identical code, and it will be the same file in thirty years. That is the recommended way.",
+      `Getting it is the whole install: go to cror.ca/ballast, press Ctrl+S, choose "Webpage, HTML only", save it as ballast.html on the shared drive. It is one file with nothing else to fetch. (Ballast's top bar also has a Save a copy link that does the same.)`,
+      "One thing to know: a browser keeps keys per address, so the cror.ca page and the file:// page each have their own registration. Pick one and stay with it. Here in the tutorial they are the same page."
+    ].join("\n\n")),
     info("superintendent", "The railroad metaphor", [
       "Ballast borrows its words from the CROR. The superintendent is the program director: approves tests, reads class profiles, settles appeals. The RTC (rail traffic controller) is the teacher: mints crew, issues tests, marks, files class profiles. Crew are the students. A test is issued to a class the way a clearance is issued to a train \u2014 one file, a clearance for each person, repeated back before it takes effect \u2014 and a finished attempt is a release. The marks come back as a cancellation. The RTC's working file is a sheet; the superintendent's is a book.",
       "It is admittedly a bit silly, and it may go away later. Until then, the mapping is the only thing you need to hold in your head."
@@ -1868,7 +1874,7 @@ ${hash}`));
   };
   var act = async (kind, ...a) => {
     if (kind === "open-explorer") return set(openWindow(st, "explorer", "CN-TRAINING \u2014 Training"));
-    if (kind === "open-browser") return set(openWindow(st, "browser", "Ballast \u2014 cror.ca", { src: APP + "?embedded=1" }));
+    if (kind === "open-browser") return set(openWindow(st, "browser", "Ballast \u2014 cror.ca", { src: APP + "?embedded=1", url: "https://cror.ca/ballast/" }));
     if (kind === "focus") {
       const top = st.windows.reduce((t, w) => w.z > (t?.z ?? -1) ? w : t, null);
       return top?.id === a[0] && !top.min ? void 0 : set(focus(st, a[0]));
@@ -1883,6 +1889,12 @@ ${hash}`));
       const f = st.files.find((x) => x.id === a[0]);
       if (!f) return;
       let s = seen(st, f.id);
+      if (/\.html$/.test(f.name)) {
+        const url = "file://///CN-TRAINING/Training/Ballast/ballast.html";
+        const b = s.windows.find((w) => w.kind === "browser");
+        s = b ? focus(setUrl(s, b.id, url, "Ballast \u2014 ballast.html"), b.id) : openWindow(s, "browser", "Ballast \u2014 ballast.html", { src: APP + "?embedded=1", url });
+        return set(toast(s, "Opened ballast.html from the shared drive. (In this tutorial the file:// copy and cror.ca are the same page; in real life each keeps its own keys \u2014 pick one and stay with it.)"));
+      }
       if (!s.windows.some((w) => w.kind === "browser")) s = openWindow(s, "browser", "Ballast \u2014 cror.ca", { src: APP + "?embedded=1" });
       set(s);
       const bid = s.windows.find((w) => w.kind === "browser").id;

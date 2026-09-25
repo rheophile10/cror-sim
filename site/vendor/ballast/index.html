@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Tf6vkE61OsLmnBfWjRIZOpTALNrF6NulLw5NUp6tL9o='; style-src 'sha256-Q90MJz/2OtBLKahp93sMfOp082FYHwaIKnYqY0UiIIw='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-mWN6BXO56/ScbB2tB7TVaZR7QAmwhxa/LbnqsbWXa0w='; style-src 'sha256-Q90MJz/2OtBLKahp93sMfOp082FYHwaIKnYqY0UiIIw='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast</title>
 <style>:root { --ink:#111; --bg:#fff; --mute:#666; --line:#ddd; --accent:#1d4ed8; --good:#15803d; --bad:#b91c1c; }
 * { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 Arial, sans-serif; -webkit-user-select:none; user-select:none }
@@ -2254,6 +2254,7 @@ ${approval.hash}`));
       go3({ screen: "home" });
     } }, "Ballast"),
     " \xB7 ",
+    embedded() || location.protocol === "file:" ? null : h("a", { href: location.pathname.split("/").pop() || "index.html", download: "ballast.html", class: "small", style: { marginRight: "12px" }, title: "Save this page as one file, ballast.html, e.g. on a shared drive \u2014 the recommended way to run it" }, "Save a copy"),
     embedded() ? null : h("a", { href: /\/ballast\//.test(location.pathname) ? "../tutorial/" : "tutorial/", class: "small", style: { marginRight: "12px" } }, "Tutorial"),
     h("a", { href: "#", onclick: async (e) => {
       e.preventDefault();
