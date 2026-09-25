@@ -33,4 +33,5 @@ await cp(join(SIM_DIST, 'index.html'), join(DIST, 'sim', 'index.html'));
 await cp(join(VENDOR, 'game'), join(DIST, 'game'), { recursive: true });
 await cp(join(VENDOR, 'ballast'), join(DIST, 'ballast'), { recursive: true });
 await cp(join(VENDOR, 'tutorial'), join(DIST, 'tutorial'), { recursive: true });
-console.log('dist/: menu, sim, game, ballast, tutorial');
+await cp(join(VENDOR, 'reader'), join(DIST, 'reader'), { recursive: true });
+console.log('dist/: menu, sim, game, ballast, tutorial, reader');

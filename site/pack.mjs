@@ -32,5 +32,7 @@ await mkdir(join(VENDOR, 'ballast'), { recursive: true });
 await cp(join(BALLAST, 'index.html'), join(VENDOR, 'ballast', 'index.html'));
 await mkdir(join(VENDOR, 'tutorial'), { recursive: true });
 await cp(join(TUTORIAL, 'index.html'), join(VENDOR, 'tutorial', 'index.html')); // the tutorial embeds ../ballast/index.html
+await mkdir(join(VENDOR, 'reader'), { recursive: true });
+await cp(join(BALLAST, 'reader', 'index.html'), join(VENDOR, 'reader', 'index.html'));
 console.log(`vendor/ballast/index.html from ${BALLAST}`);
 console.log(`vendor/game/index.html from ${GAME_DIST}`);

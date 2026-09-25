@@ -54,11 +54,11 @@ for (const transport of ['file', 'http']) {
       return { p, errors, scripts };
     };
 
-    test('the menu offers four places and loads none of them', async () => {
+    test('the menu offers five places and loads none of them', async () => {
       const { p, errors, scripts } = await page();
       await p.goto(base() + 'index.html');
       const links = await p.locator('a.option').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
-      assert.deepEqual(links, ['sim/index.html', 'game/index.html', 'ballast/index.html', 'tutorial/index.html']);
+      assert.deepEqual(links, ['sim/index.html', 'game/index.html', 'ballast/index.html', 'tutorial/index.html', 'reader/index.html']);
       assert.deepEqual(scripts, []);
       assert.deepEqual(errors, []);
       await p.context().close();
@@ -94,6 +94,17 @@ for (const transport of ['file', 'http']) {
       await p.dblclick('.dicon:has-text("Browser")');
       await p.frameLocator('iframe.app').locator('input[placeholder="Name"]').waitFor();
       assert.deepEqual(errors.filter((e) => !/sandbox/.test(e)), []);
+      await p.context().close();
+    });
+
+    test('the reader opens from the menu and finds a rule', async () => {
+      const { p, errors } = await page();
+      await p.goto(base() + 'index.html');
+      await p.locator('a.option[href="reader/index.html"]').click();
+      await p.waitForLoadState('load');
+      await p.fill('.rside input', 'imperfectly displayed'); await p.click('.rresults a >> nth=0');
+      await p.locator('h2:has-text("27. Signal Imperfectly Displayed")').waitFor();
+      assert.deepEqual(errors, []);
       await p.context().close();
     });
 

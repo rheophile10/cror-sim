@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-EC8v+uHjl3juLkBVXrte0+40bCorD9/JEouUAIVVIjs='; style-src 'sha256-Q90MJz/2OtBLKahp93sMfOp082FYHwaIKnYqY0UiIIw='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-nlW5is+XMUNQHVYEh/tidz8YOdHhp7CTmMq4AcetzoU='; style-src 'sha256-M8hlWcjtvoPwmIScNCi6q00hPofBkJtLIbmnBerTGJs='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast</title>
 <style>:root { --ink:#111; --bg:#fff; --mute:#666; --line:#ddd; --accent:#1d4ed8; --good:#15803d; --bad:#b91c1c; }
 * { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 Arial, sans-serif; -webkit-user-select:none; user-select:none }
@@ -33,10 +33,23 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
 .steps { padding-left:20px } .steps li { margin:10px 0; padding:8px 10px; border-radius:8px } .steps li.done { color:var(--mute) } .steps li.next { background:#eef2ff } .steps li.later { opacity:.7 }
 .drop textarea { border:none; background:transparent; max-width:none; text-align:center }
 
+.overlay.book { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:40; display:flex; align-items:center; justify-content:center } .bookbox { width:min(1100px, 96vw); height:min(760px, 92vh); background:#fff; border-radius:8px; overflow:hidden; display:flex } .bookbox .reader { flex:1; border:none }
 .coach { position:fixed; inset:0; pointer-events:none; z-index:50 }
 .coach-ring { position:absolute; border:3px solid #f59e0b; border-radius:10px; box-shadow:0 0 0 9999px rgba(0,0,0,.35); animation:coach 1.2s ease-in-out infinite alternate }
 .coach-note { position:absolute; max-width:320px; background:#fff7ed; color:#111; border:1px solid #f59e0b; border-radius:8px; padding:10px 12px; font-size:14px; box-shadow:0 6px 24px rgba(0,0,0,.25) }
 @keyframes coach { from { box-shadow:0 0 0 9999px rgba(0,0,0,.35), 0 0 0 0 rgba(245,158,11,.6) } to { box-shadow:0 0 0 9999px rgba(0,0,0,.35), 0 0 0 10px rgba(245,158,11,0) } }
+
+.reader { display:flex; gap:0; height:100%; min-height:70vh; border:1px solid #ccc; background:#fff }
+.reader .rside { width:300px; min-width:220px; border-right:1px solid #ddd; padding:10px; overflow:auto; display:flex; flex-direction:column; gap:8px }
+.reader .rside input { width:100%; font:inherit; padding:6px 8px }
+.reader .rmain { flex:1; padding:12px 18px; overflow:auto; max-height:85vh }
+.reader.compact { min-height:0; height:100% } .reader.compact .rmain { max-height:none }
+.rbar { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px }
+.rcrumbs { font-size:13px; color:#555; margin-bottom:6px } .rcrumbs a { color:#1d4ed8; text-decoration:none }
+.rtext { white-space:pre-wrap; line-height:1.5; font-size:15px } .rlink { color:#1d4ed8; text-decoration:underline dotted }
+mark.rnote { background:#fde68a; cursor:help; padding:0 1px; border-bottom:2px solid #f59e0b }
+.rlist, .rresults, .rtoc { list-style:none; padding:0; margin:0 } .rlist li, .rresults li { padding:4px 0; border-bottom:1px solid #f0f0f0 } .rtoc li a { display:block; padding:3px 4px; color:#1d4ed8; text-decoration:none } .rtoc li a.on { background:#eef }
+.rresults a, .rlist a { color:#1d4ed8; text-decoration:none; font-weight:600 }
 </style>
 </head>
 <body>
@@ -154,6 +167,322 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
   var random = (n) => crypto.getRandomValues(new Uint8Array(n));
   var sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
 
+  // src/reader/doc.js
+  var norm = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  var checkDocument = (d) => {
+    if (!d || d.kind !== "document" || d.v !== 1 || !Array.isArray(d.nodes) || !d.id) throw new Error('not a document (need {v:1, kind:"document", id, nodes})');
+    const ids = /* @__PURE__ */ new Set();
+    for (const n of d.nodes) {
+      if (!n.id || !n.kind) throw new Error("every node needs id and kind");
+      if (ids.has(n.id)) throw new Error(`duplicate node ${n.id}`);
+      ids.add(n.id);
+    }
+    return d;
+  };
+  var index = (doc) => {
+    const by = new Map(doc.nodes.map((n) => [n.id, n]));
+    const kids = /* @__PURE__ */ new Map();
+    doc.nodes.forEach((n, i) => {
+      const p = n.parent ?? "";
+      if (!kids.has(p)) kids.set(p, []);
+      kids.get(p).push(n);
+      n._i = i;
+    });
+    const children = (id) => kids.get(id ?? "") || [];
+    const path = (id) => {
+      const out = [];
+      for (let n = by.get(id); n; n = by.get(n.parent)) out.unshift(n);
+      return out;
+    };
+    return { doc, by, children, roots: children(""), path, get: (id) => by.get(id) || null };
+  };
+  var resolve = (ix, ref, within = null) => {
+    let r = norm(ref).replace(/^(CROR|Rule|Rules)\s+/i, "").replace(/\s+/g, "");
+    if (/^\([a-z0-9]+\)/.test(r) && within) r = within.replace(/\(.*$/, "") + r;
+    for (let cand = r; cand; cand = cand.includes("(") ? cand.replace(/\([^()]*\)$/, "") : "") {
+      if (ix.by.has(cand)) return cand;
+    }
+    const slug = "def:" + norm(ref).replace(/^(CROR|def(inition)?)\s+/i, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    return ix.by.has(slug) ? slug : null;
+  };
+  var REF = /\b(Rules?|paragraphs?|Paragraphs?|Rule)\s+((?:\d{1,3}(?:\.\d+)?|\([a-z0-9]{1,4}\))(?:\([a-z0-9]{1,4}\))*(?:\s*(?:,|and|or|to|-|–)\s*(?:\d{1,3}(?:\.\d+)?|\([a-z0-9]{1,4}\))(?:\([a-z0-9]{1,4}\))*)*)/g;
+  var linkify = (ix, text2, within = null) => {
+    const out = [];
+    let last2 = 0;
+    for (const m of text2.matchAll(REF)) {
+      const start = m.index + m[1].length + 1, list = m[2];
+      if (m.index > last2) out.push({ text: text2.slice(last2, m.index) });
+      out.push({ text: text2.slice(m.index, start) });
+      let pos = 0;
+      for (const t of list.matchAll(/(?:\d{1,3}(?:\.\d+)?|\([a-z0-9]{1,4}\))(?:\([a-z0-9]{1,4}\))*/g)) {
+        if (t.index > pos) out.push({ text: list.slice(pos, t.index) });
+        const id = resolve(ix, t[0], within);
+        out.push(id ? { link: true, id, text: t[0] } : { text: t[0] });
+        pos = t.index + t[0].length;
+      }
+      if (pos < list.length) out.push({ text: list.slice(pos) });
+      last2 = start + list.length;
+    }
+    if (last2 < text2.length) out.push({ text: text2.slice(last2) });
+    return out;
+  };
+  var search = (ix, q, limit = 200) => {
+    const needle = norm(q).toLowerCase();
+    if (needle.length < 2) return [];
+    const words = needle.split(" ");
+    const hits = [];
+    for (const n of ix.doc.nodes) {
+      const title = `${n.number || ""} ${n.title || ""}`.toLowerCase(), body = (n.text || "").toLowerCase();
+      const inTitle = title.includes(needle) || n.id.toLowerCase() === needle;
+      const inText = body.includes(needle) || words.length > 1 && words.every((w) => body.includes(w));
+      if (!inTitle && !inText) continue;
+      const at = Math.max(0, body.indexOf(words[0]));
+      hits.push({ id: n.id, kind: n.kind, number: n.number || null, title: n.title || null, inTitle, snippet: n.text ? norm(n.text.slice(Math.max(0, at - 60), at + 120)) : "", order: n._i });
+    }
+    return hits.sort((a, b) => b.inTitle - a.inTitle || a.order - b.order).slice(0, limit);
+  };
+  var checkLink = (ix, link) => {
+    const [id, hash] = String(link).split("@");
+    const n = ix.get(id);
+    if (!n) return { id, status: "missing" };
+    return { id, status: !hash || n.hash === hash ? "ok" : "changed", hash: n.hash };
+  };
+
+  // src/reader/notes.js
+  var NOTES_KIND = "notes";
+  var makeNote = (node, start, end, quote, text2, by = "") => ({ id: Math.random().toString(36).slice(2, 10), node, start, end, quote, text: text2, by, at: Date.now() });
+  var anchor = (nodeText, note3) => {
+    if (nodeText.slice(note3.start, note3.end) === note3.quote) return [note3.start, note3.end];
+    const i = nodeText.indexOf(note3.quote);
+    return i >= 0 ? [i, i + note3.quote.length] : null;
+  };
+  var segments = (nodeText, notes3) => {
+    const cuts = /* @__PURE__ */ new Set([0, nodeText.length]);
+    const spans = [];
+    for (const n of notes3) {
+      const a = anchor(nodeText, n);
+      if (a) {
+        spans.push([a[0], a[1], n]);
+        cuts.add(a[0]);
+        cuts.add(a[1]);
+      }
+    }
+    const pts = [...cuts].sort((x, y) => x - y);
+    const out = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [s, e] = [pts[i], pts[i + 1]];
+      out.push({ start: s, end: e, notes: spans.filter(([a, b]) => a <= s && e <= b).map((x) => x[2]) });
+    }
+    return out;
+  };
+  var exportNotes = (docId, edition, notes3) => JSON.stringify({ v: 1, kind: NOTES_KIND, document: docId, edition, exported: (/* @__PURE__ */ new Date()).toISOString(), notes: notes3 }, null, 1);
+  var importNotes = (text2) => {
+    const j = JSON.parse(text2);
+    if (j.kind !== NOTES_KIND || !Array.isArray(j.notes)) throw new Error("not a notes file");
+    return j;
+  };
+  var merge = (mine, theirs) => {
+    const by = new Map(mine.map((n) => [n.id, n]));
+    for (const n of theirs) {
+      const m = by.get(n.id);
+      if (!m || (n.at || 0) > (m.at || 0)) by.set(n.id, n);
+    }
+    return [...by.values()];
+  };
+
+  // src/reader/ui.js
+  var renderReader = (root4, opts) => {
+    const ix = index(opts.doc);
+    let notes3 = opts.notes || [];
+    let at = opts.at && ix.get(opts.at) ? opts.at : null;
+    let q = "", results = null;
+    const setNotes2 = (n) => {
+      notes3 = n;
+      opts.onNotes?.(notes3);
+      draw();
+    };
+    const goTo = (id) => {
+      at = id;
+      results = null;
+      draw();
+      document.querySelector(".rmain")?.scrollTo(0, 0);
+    };
+    const textView = (n) => {
+      const box = h("div", { class: "rtext", "data-node": n.id });
+      for (const seg of segments(n.text, notes3.filter((x) => x.node === n.id))) {
+        const piece = n.text.slice(seg.start, seg.end);
+        const parts = linkify(ix, piece, n.id).map((s) => s.link ? h("a", { href: "#" + s.id, class: "rlink", onclick: (e) => {
+          e.preventDefault();
+          goTo(s.id);
+        } }, s.text) : s.text);
+        if (seg.notes.length) box.append(h("mark", { class: "rnote", title: seg.notes.map((x) => x.text + (x.by ? ` \u2014 ${x.by}` : "")).join("\n\n"), onclick: () => {
+          if (!opts.readOnly) editNote(seg.notes[0]);
+        } }, ...parts));
+        else box.append(...parts);
+      }
+      return box;
+    };
+    const editNote = (note3) => {
+      const t = prompt("Edit the note (empty to delete):", note3.text);
+      if (t === null) return;
+      setNotes2(t.trim() ? notes3.map((x) => x.id === note3.id ? { ...x, text: t.trim(), at: Date.now() } : x) : notes3.filter((x) => x.id !== note3.id));
+    };
+    const selection = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+      const range = sel.getRangeAt(0);
+      const box = range.commonAncestorContainer.parentElement?.closest?.(".rtext") || range.commonAncestorContainer.closest?.(".rtext");
+      if (!box) return null;
+      const offsetOf = (node, off) => {
+        let n = 0;
+        const w = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+        let t;
+        while (t = w.nextNode()) {
+          if (t === node) return n + off;
+          n += t.data.length;
+        }
+        return node === box ? n : -1;
+      };
+      const a = offsetOf(range.startContainer, range.startOffset), b = offsetOf(range.endContainer, range.endOffset);
+      if (a < 0 || b < 0 || a === b) return null;
+      const [s, e] = a < b ? [a, b] : [b, a];
+      const text2 = ix.get(box.dataset.node).text;
+      return { node: box.dataset.node, start: s, end: e, quote: text2.slice(s, e) };
+    };
+    const annotate = () => {
+      const s = selection();
+      if (!s) return alert("Select some text in the rule first.");
+      const t = prompt(`Note on \u201C${s.quote.slice(0, 80)}${s.quote.length > 80 ? "\u2026" : ""}\u201D:`);
+      if (!t?.trim()) return;
+      setNotes2([...notes3, makeNote(s.node, s.start, s.end, s.quote, t.trim(), opts.by || "")]);
+    };
+    const crumbs = (id) => h("div", { class: "rcrumbs" }, h("a", { href: "#", onclick: (e) => {
+      e.preventDefault();
+      goTo(null);
+    } }, opts.doc.title), ix.path(id).map((n) => [" \u203A ", h("a", { href: "#" + n.id, onclick: (e) => {
+      e.preventDefault();
+      goTo(n.id);
+    } }, label(n))]));
+    const label = (n) => n.kind === "section" || n.kind === "definition" ? n.title : n.kind === "subrule" ? "(" + n.id.slice(n.id.lastIndexOf("(") + 1) : `${n.number}${n.title ? " " + n.title : ""}`;
+    const heading = (n) => n.kind === "subrule" ? `${n.id}` : n.kind === "section" ? n.title : n.number ? `${n.number}. ${n.title || ""}` : n.title;
+    const list = (nodes) => h("ul", { class: "rlist" }, nodes.map((n) => h("li", {}, h("a", { href: "#" + n.id, onclick: (e) => {
+      e.preventDefault();
+      goTo(n.id);
+    } }, heading(n)), n.kind === "subrule" || n.kind === "definition" ? h("span", { class: "small" }, " ", n.text.slice(0, 90), n.text.length > 90 ? "\u2026" : "") : null)));
+    const main = () => {
+      if (!at) return h("div", {}, h("h2", {}, opts.doc.title), h("p", { class: "small" }, `${opts.doc.edition || ""} \xB7 ${opts.doc.source || ""}`), list(ix.roots));
+      const n = ix.get(at);
+      const kids = ix.children(n.id);
+      return h(
+        "div",
+        {},
+        crumbs(n.id),
+        h("h2", {}, heading(n)),
+        h("div", { class: "small complete" }, `hash ${n.hash}`),
+        n.text ? textView(n) : null,
+        kids.length ? [h("h3", {}, n.kind === "section" ? "Rules" : "Parts"), list(kids)] : null,
+        n.kind === "subrule" || n.kind === "rule" ? h("p", { class: "small" }, "Cite as ", h("code", {}, `CROR ${n.id}`), " \xB7 link ", h("code", {}, `${n.id}@${n.hash}`)) : null
+      );
+    };
+    const side = () => {
+      const box = h("input", { placeholder: "Search headings and text\u2026", value: q, oninput: (e) => {
+        q = e.target.value;
+        results = q.trim().length >= 2 ? search(ix, q) : null;
+        drawSide();
+      } });
+      const res = results ? [h("div", { class: "small" }, `${results.length} result${results.length === 1 ? "" : "s"}`), h("ul", { class: "rresults" }, results.map((r) => h("li", {}, h("a", { href: "#" + r.id, onclick: (e) => {
+        e.preventDefault();
+        goTo(r.id);
+      } }, r.number ? `${r.number} ${r.title || ""}` : r.title || r.id), r.snippet ? h("div", { class: "small" }, r.snippet) : null)))] : [h("div", { class: "small" }, "Contents"), h("ul", { class: "rtoc" }, ix.roots.map((s) => h("li", {}, h("a", { href: "#" + s.id, class: at === s.id ? "on" : "", onclick: (e) => {
+        e.preventDefault();
+        goTo(s.id);
+      } }, s.title))))];
+      return [box, ...res];
+    };
+    const toolbar = () => opts.readOnly ? h("div", { class: "rbar" }, h("span", { class: "small" }, `${opts.doc.title} \xB7 ${opts.doc.edition || ""} \xB7 reading only`), opts.onClose ? h("button", { onclick: opts.onClose }, "Close") : null) : h(
+      "div",
+      { class: "rbar" },
+      h("button", { class: "primary", onclick: annotate }, "Annotate selection"),
+      h("button", { onclick: () => download(`notes-${opts.doc.id}.json`, exportNotes(opts.doc.id, opts.doc.edition, notes3), "application/json") }, `Notes out (${notes3.length})`),
+      h("label", { class: "btn" }, "Notes in", h("input", { type: "file", accept: ".json,application/json", style: { display: "none" }, onchange: async (e) => {
+        try {
+          const j = importNotes(await readFileText(e.target.files[0]));
+          if (j.document !== opts.doc.id && !confirm(`These notes are for ${j.document}; this is ${opts.doc.id}. Import anyway?`)) return;
+          setNotes2(merge(notes3, j.notes));
+        } catch (err) {
+          alert(err.message);
+        }
+      } })),
+      h("button", { onclick: () => download(`${opts.doc.id}.json`, JSON.stringify(opts.doc, null, 0), "application/json") }, "Document out"),
+      opts.onDocument ? h("label", { class: "btn" }, "Document in", h("input", { type: "file", accept: ".json,application/json", style: { display: "none" }, onchange: async (e) => {
+        try {
+          opts.onDocument(checkDocument(JSON.parse(await readFileText(e.target.files[0]))));
+        } catch (err) {
+          alert(err.message);
+        }
+      } })) : null,
+      opts.onClose ? h("button", { onclick: opts.onClose }, "Close") : null
+    );
+    const sideEl = h("div", { class: "rside" }), mainEl = h("div", { class: "rmain" });
+    const drawSide = () => {
+      const focus = document.activeElement === sideEl.querySelector("input");
+      mount(sideEl, ...side());
+      if (focus) {
+        const i = sideEl.querySelector("input");
+        i.focus();
+        i.setSelectionRange(q.length, q.length);
+      }
+    };
+    const draw = () => {
+      drawSide();
+      mount(mainEl, toolbar(), main());
+    };
+    mount(root4, h("div", { class: "reader" + (opts.compact ? " compact" : "") }, sideEl, mainEl));
+    draw();
+    return { goTo, notes: () => notes3 };
+  };
+
+  // src/app/store.js
+  var DB = embedded() ? "ballast-embedded" : "ballast";
+  var VER = 1;
+  var db = () => new Promise((res, rej) => {
+    const r = indexedDB.open(DB, VER);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv");
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  var tx = async (mode, fn) => {
+    const d = await db();
+    return new Promise((res, rej) => {
+      const t = d.transaction("kv", mode);
+      const q = fn(t.objectStore("kv"));
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+  };
+  var get = (k) => tx("readonly", (s) => s.get(k));
+  var set = (k, v) => tx("readwrite", (s) => s.put(v, k));
+  var del = (k) => tx("readwrite", (s) => s.delete(k));
+
+  // src/app/docs.js
+  var saveDocument = async (doc) => {
+    const ids = await get("docs") || [];
+    if (!ids.includes(doc.id)) await set("docs", [...ids, doc.id]);
+    await set("doc:" + doc.id, doc);
+    return doc;
+  };
+  var documents = async () => {
+    const out = [];
+    for (const id of await get("docs") || []) {
+      const d = await get("doc:" + id);
+      if (d) out.push(d);
+    }
+    return out;
+  };
+  var getDocument = async (id) => id ? await get("doc:" + id) || null : (await documents())[0] || null;
+  var getNotes = async (id) => await get("notes:" + id) || [];
+  var setNotes = (id, notes3) => set("notes:" + id, notes3);
+
   // src/armor.js
   var KINDS = ["PROFILE", "TEST", "RELEASE", "CANCEL", "SHEET", "BOOK", "APPROVAL", "REPORT"];
   var wrap76 = (s) => s.replace(/(.{76})/g, "$1\n").trim();
@@ -226,49 +555,36 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
   };
   var sourceHash = async (source) => Array.from(await sha256(utf8(source.replace(/\r\n/g, "\n")))).map((b) => b.toString(16).padStart(2, "0")).join("");
   var MINTS_BY = { crew: "rtc", rtc: "superintendent", superintendent: "superintendent" };
-  var mintString = (p, role, start, by) => `ballast/mint/1
+  var mintString = (p, role, start, by, root4) => `ballast/mint/2
 ${role}
 ${start}
 ${p.pin}
 ${p.pub}
 ${p.sig}
-${by.sig}`;
+${by.sig}
+${root4.sig}
+${root4.pub}`;
   var mintProfile = async (minter, profile, role, start = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) => {
     if (!ROLES.includes(role)) throw new Error(`bad role ${role}`);
     if (minter.role !== MINTS_BY[role]) throw new Error(`a ${minter.role} cannot mint ${role}`);
-    const by = { name: minter.name, pin: minter.pin, sig: minter.sig, role: minter.role };
-    const signature = await signBytes(minter.sign, utf8(mintString(profile, role, start, by)));
-    return { ...publicProfile(profile), role, minted: { role, start, by, signature } };
+    const by = { name: minter.name, pin: minter.pin, sig: minter.sig, pub: minter.pub, role: minter.role };
+    const root4 = minter.role === "superintendent" ? { name: minter.name, sig: minter.sig, pub: minter.pub } : minter.minted?.root;
+    if (!root4) throw new Error("the minter has no superintendent above them");
+    const via = minter.role === "superintendent" ? null : minter.minted;
+    const signature = await signBytes(minter.sign, utf8(mintString(profile, role, start, by, root4)));
+    return { ...publicProfile(profile), role, minted: { role, start, by, root: root4, via, signature } };
   };
   var checkMint = async (p) => {
     const m = p.minted;
     if (!m || m.role !== p.role || !ROLES.includes(p.role)) return false;
     if (m.by.role !== MINTS_BY[p.role]) return false;
     if (p.role === "superintendent" && m.by.sig !== p.sig) return false;
-    return verifyBytes(m.by.sig, m.signature, utf8(mintString(p, p.role, m.start, m.by)));
+    if (!m.root?.sig || !m.root?.pub) return false;
+    if (!await verifyBytes(m.by.sig, m.signature, utf8(mintString(p, p.role, m.start, m.by, m.root)))) return false;
+    if (p.role === "superintendent") return m.root.sig === p.sig;
+    if (m.by.role === "superintendent") return m.root.sig === m.by.sig && !m.via;
+    return !!m.via && m.via.role === "rtc" && m.via.root?.sig === m.root.sig && checkMint({ ...m.by, pin: m.by.pin, minted: m.via });
   };
-
-  // src/app/store.js
-  var DB = embedded() ? "ballast-embedded" : "ballast";
-  var VER = 1;
-  var db = () => new Promise((res, rej) => {
-    const r = indexedDB.open(DB, VER);
-    r.onupgradeneeded = () => r.result.createObjectStore("kv");
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-  var tx = async (mode, fn) => {
-    const d = await db();
-    return new Promise((res, rej) => {
-      const t = d.transaction("kv", mode);
-      const q = fn(t.objectStore("kv"));
-      q.onsuccess = () => res(q.result);
-      q.onerror = () => rej(q.error);
-    });
-  };
-  var get = (k) => tx("readonly", (s) => s.get(k));
-  var set = (k, v) => tx("readwrite", (s) => s.put(v, k));
-  var del = (k) => tx("readwrite", (s) => s.delete(k));
 
   // src/crypto.js
   var subtle2 = crypto.subtle;
@@ -341,7 +657,7 @@ ${until}`
     if (!m) throw new Error(`bad area "${a}"`);
     return { id: m[1], label: m[2] || m[1] };
   });
-  var KEYS = /* @__PURE__ */ new Set(["id", "type", "area", "ref", "lcr", "tags", "svg", "img", "alt", "worth"]);
+  var KEYS = /* @__PURE__ */ new Set(["id", "type", "area", "ref", "lcr", "tags", "svg", "img", "alt", "worth", "cror"]);
   var parseTest = async (source) => {
     const errors = [];
     const blocks2 = source.replace(/\r\n/g, "\n").split(/\n---+\n/);
@@ -367,6 +683,7 @@ ${until}`
           test.settings.shuffleItems = /items/.test(v);
           test.settings.shuffleOptions = /options/.test(v);
         } else if (k === "back") test.settings.allowBack = /^(yes|true|on)$/i.test(v);
+        else if (k === "cror") test.settings.openBook = /^(open|yes|true|on)$/i.test(v);
         else if (k === "areas") test.areas = parseAreas(v);
         else errors.push(`header: unknown key "${k}"`);
       } catch (e) {
@@ -377,7 +694,7 @@ ${until}`
     const seen = /* @__PURE__ */ new Set();
     for (const [n, block] of blocks2.entries()) {
       if (!block.trim()) continue;
-      const item = { type: "mc", prompt: "", options: [], pairs: [], key: null, answer: "", ref: [], tags: [], img: [], worth: 1 };
+      const item = { type: "mc", prompt: "", options: [], pairs: [], key: null, answer: "", ref: [], cror: [], tags: [], img: [], worth: 1 };
       let mode = null;
       for (const raw of block.split("\n")) {
         const line = raw.trimEnd();
@@ -411,6 +728,7 @@ ${until}`
           const k = m[1].toLowerCase(), v = m[2].trim();
           if (k === "ref") item.ref.push(...v.split(/\s*[,;]\s*|\s+(?=CROR|GOI|GR)/).filter(Boolean));
           else if (k === "tags") item.tags.push(...v.split(/\s+/).filter(Boolean));
+          else if (k === "cror") item.cror.push(...v.split(/[\s,;]+/).filter(Boolean));
           else if (k === "img") item.img.push({ name: v, alt: "" });
           else if (k === "alt") {
             if (item.img.length) item.img[item.img.length - 1].alt = v;
@@ -444,7 +762,41 @@ ${until}`
     if (!test.items.length) errors.push("no items (separate items with --- lines)");
     return { test, errors };
   };
-  var publicItem = ({ key, answer, ...rest }) => rest;
+  var publicItem = ({ key, answer, ref, cror, lcr, tags, ...rest }) => rest;
+
+  // src/director.js
+  var itemHash = async (it) => {
+    const p = publicItem(it);
+    const canon = { id: p.id, type: p.type, prompt: p.prompt, options: p.options || [], pairs: p.pairs || [], svg: p.svg || null, img: (p.img || []).map((i) => ({ name: i.name, alt: i.alt || "" })), worth: p.worth || 1, area: p.area || null };
+    return hex(await sha256(utf8(JSON.stringify(canon))));
+  };
+  var itemsRoot = (items) => Object.keys(items).sort().map((id) => `${id}:${items[id]}`).join("\n");
+  var approveSource = async (director, source, title) => {
+    const hash = await sourceHash(source);
+    const { test, errors } = await parseTest(source);
+    if (errors.length) throw new Error(`cannot approve: ${errors[0]}`);
+    const items = {};
+    for (const it of test.items) items[it.id] = await itemHash(it);
+    const signature = await signBytes(director.sign, utf8(`ballast/approval/2
+${hash}
+${itemsRoot(items)}`));
+    return armor("APPROVAL", { v: 2, kind: "approval", hash, items, title, by: director.sig, pub: director.pub, name: director.name, signature }, { title, hash: hash.slice(0, 12), by: director.name });
+  };
+  var readApproval = async (text2) => (await dearmor(text2, "APPROVAL")).body;
+  var checkApproval = async (approval, source) => await sourceHash(source) === approval.hash && checkApprovalSignature(approval);
+  var checkApprovalSignature = (approval) => approval?.v === 2 && !!approval.items && verifyBytes(approval.by, approval.signature, utf8(`ballast/approval/2
+${approval.hash}
+${itemsRoot(approval.items)}`));
+  var sendReport = async (teacher, directorPub, report) => {
+    const salt = unb64url(report.test);
+    const key = await hkdfKey(await shared(teacher.priv, directorPub), salt, INFO.report);
+    return armor("REPORT", { v: 1, kind: "report", test: report.test, teacher: teacher.pub, box: await sealJSON(key, report) }, { title: report.title, teacher: teacher.name, trains: report.rows.length });
+  };
+  var takeReport = async (text2, director) => {
+    const { body } = await dearmor(text2, "REPORT");
+    const key = await hkdfKey(await shared(director.priv, body.teacher), unb64url(body.test), INFO.report);
+    return { teacher: body.teacher, report: await openJSON(key, body.box) };
+  };
 
   // src/shuffle.js
   var fnv = (s) => {
@@ -505,8 +857,14 @@ ${until}`
     const text2 = await armor("TEST", body, { title: test.title, rtc: rtcName, items: items.length, clearances: trains.length, approved: approval ? "yes" : "no", from: window2.from, until: window2.until, complete: hash.slice(0, 4).toUpperCase() });
     return { text: text2, record: { id, salt, hash, key: b64url(K), title: test.title, window: window2 } };
   };
-  var copyTest = async (text2, train, pin, at = Date.now()) => {
+  var copyTest = async (text2, train, pin, at = Date.now(), trust = null) => {
     const { body } = await dearmor(text2, "TEST");
+    if (trust) {
+      const a = body.approval;
+      if (!a) throw new Error("This test carries no superintendent approval. Crew only write approved tests.");
+      if (a.by !== trust.root) throw new Error(`This test was approved by ${a.name || "someone"}, not by the superintendent who stands over your RTC.`);
+      if (!await checkApprovalSignature(a)) throw new Error("The approval on this test does not verify.");
+    }
     const w = checkWindow(body.window);
     const when = (iso) => new Date(iso).toLocaleString();
     if (at < Date.parse(w.from)) throw new Error(`This test opens at ${when(w.from)}.`);
@@ -541,6 +899,10 @@ ${until}`
         const it = byId[itemId];
         if (!it) throw new Error(`no item ${itemId}`);
         const p = await openJSON(await hkdfKey(Kb, saltBytes, INFO.item(itemId)), it.box);
+        if (trust) {
+          const want = body.approval.items[itemId];
+          if (!want || want !== await itemHash(p)) throw new Error(`Item ${itemId} is not what the superintendent approved. Stop and tell the superintendent.`);
+        }
         if (body.settings.shuffleOptions && p.options?.length) p.options = shuffled(p.options, sid + itemId);
         if (p.pairs?.length) p.rights = shuffled(p.pairs.map((x) => ({ id: x.id, text: x.right })), sid + itemId + "r");
         return p;
@@ -730,8 +1092,11 @@ ${box}`);
   var esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   var LAMP = { G: "#2fbf4a", Y: "#f2c319", R: "#e23b2e", L: "#f4f4f4", x: "#2a2a2a" };
   var signal = (arg) => {
-    const heads = arg.trim().split(/\s*,\s*/).filter(Boolean);
-    const h2 = 40 + heads.length * 70;
+    const words = arg.trim().split(/\s+/);
+    const heads = (words.shift() || "").split(/\s*,\s*/).filter(Boolean);
+    const plate = words.find((w) => /^(DV|R|L|A|[A-Z]{1,2})$/.test(w)) || "";
+    const low = words.some((w) => /^low$/i.test(w));
+    const h2 = 40 + heads.length * 70 + (plate ? 40 : 0);
     let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 ${h2}" width="240" height="${h2 * 2}">`;
     s += `<rect x="56" y="0" width="8" height="${h2}" fill="#555"/>`;
     heads.forEach((raw, i) => {
@@ -743,6 +1108,8 @@ ${box}`);
         s += `<line x1="${60 + 24 * Math.cos(a)}" y1="${cy + 24 * Math.sin(a)}" x2="${60 + 32 * Math.cos(a)}" y2="${cy + 32 * Math.sin(a)}" stroke="${c}" stroke-width="3"/>`;
       }
     });
+    if (plate) s += `<rect x="36" y="${h2 - 38}" width="48" height="30" rx="4" fill="#f4f4f4" stroke="#333" stroke-width="2"/><text x="60" y="${h2 - 16}" font-size="20" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#111">${esc(plate)}</text>`;
+    if (low) s += `<rect x="20" y="${h2 - 8}" width="80" height="8" fill="#555"/>`;
     return s + "</svg>";
   };
   var sw = (arg) => {
@@ -807,7 +1174,7 @@ ${box}`);
     for (const b of bitmapCache.values()) b?.close?.();
     bitmapCache.clear();
   };
-  var drawItem = (canvas, item, { answer, pick, images = [], watermark = "", index = 0, count = 0 }) => {
+  var drawItem = (canvas, item, { answer, pick, images = [], watermark = "", index: index2 = 0, count = 0 }) => {
     const ctx2 = canvas.getContext("2d");
     const W = canvas.width, pad = 24, lh = 24, colW = W - 2 * pad;
     const hits = [];
@@ -817,7 +1184,7 @@ ${box}`);
     ctx2.fillStyle = "#111";
     ctx2.font = BOLD;
     ctx2.textBaseline = "top";
-    ctx2.fillText(`${index + 1} / ${count}`, pad, pad);
+    ctx2.fillText(`${index2 + 1} / ${count}`, pad, pad);
     let y = pad + 36;
     ctx2.font = FONT;
     y = wrap(ctx2, item.prompt, pad, y, colW, lh) + 8;
@@ -978,7 +1345,7 @@ ${box}`);
     "div",
     { class: "card row" },
     avatar(p, 72),
-    h("div", {}, h("b", {}, p.name), ` \xB7 ${p.role === "crew" ? "Crew " : ""}${p.pin} \xB7 ${p.role === "none" ? "not yet minted" : p.role}`, p.minted ? h("div", { class: "small" }, `${p.role} since ${p.minted.start}, minted by ${p.minted.by.name}`) : null, h(
+    h("div", {}, h("b", {}, p.name), ` \xB7 ${p.role === "crew" ? "Crew " : ""}${p.pin} \xB7 ${p.role === "none" ? "not yet minted" : p.role}`, p.minted ? h("div", { class: "small" }, `${p.role} since ${p.minted.start}, minted by ${p.minted.by.name}`, p.minted.root && p.minted.root.sig !== p.sig ? ` \xB7 under superintendent ${p.minted.root.name}` : "") : null, h(
       "div",
       { class: "row" },
       text2 ? h("button", { onclick: () => download(`profile-${p.pin}.txt`, text2) }, "Download profile") : null,
@@ -986,6 +1353,18 @@ ${box}`);
       ...extra
     ))
   );
+
+  // exercises/signals.txt
+  var signals_default = '# Signals \u2014 aspects and indications\ntime: 90m\npass: 90%\nshuffle: items options\nback: yes\ncror: open\nareas: aspects "Reading aspects" \xB7 indications "Indications"\n---\nQ: Which signal indication is this?\na) Clear To Medium\nb) Slow To Clear\n*c) Clear To Stop\nd) Slow To Stop\nid: asp-411-1\nsvg: signal Y,R,R\narea: aspects\nref: CROR 411\ncror: 411@e274ca6a3f4f\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Clear To Medium\nb) Limited To Diverging\n*c) Advance Clear To Diverging\nd) Slow To Stop\nid: asp-414A-2\nsvg: signal Yf,Y,R DV\narea: aspects\nref: CROR 414A\ncror: 414A@49770fd951f6\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Diverging\n*b) Advance Clear To Limited\nc) Diverging To Clear\nd) Limited To Slow\nid: asp-412-3\nsvg: signal Yf,Gf,R\narea: aspects\nref: CROR 412\ncror: 412@0f56ab6952be\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Medium To Diverging\nb) Clear To Medium\n*c) Advance Clear To Medium\nd) Limited To Medium\nid: asp-413-4\nsvg: signal Yf,G,R\narea: aspects\nref: CROR 413\ncror: 413@453bcd91368e\ntags: signals aspect\n---\nQ: Which signal indication is this?\n*a) Advance Clear To Slow\nb) Advance Clear To Stop\nc) Diverging To Stop\nd) Clear To Diverging\nid: asp-414-5\nsvg: signal Yf,Y,R\narea: aspects\nref: CROR 414\ncror: 414@86db2f0afd2a\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Medium To Clear\n*b) Advance Clear To Stop\nc) Medium To Slow\nd) Diverging To Diverging\nid: asp-415-6\nsvg: signal Yf,R,R\narea: aspects\nref: CROR 415\ncror: 415@5ea5219b57b0\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Limited To Slow\n*b) Clear\nc) Medium To Medium\nd) Slow To Stop\nid: asp-405-7\nsvg: signal G,R,R\narea: aspects\nref: CROR 405\ncror: 405@7cdb3a9b9319\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Stop\nb) Slow To Slow\nc) Restricting\n*d) Clear To Diverging\nid: asp-408-8\nsvg: signal G,R,Yf DV\narea: aspects\nref: CROR 408\ncror: 408@908a798e6497\ntags: signals aspect\n---\nQ: Which signal indication is this?\n*a) Clear To Diverging\nb) Diverging To Diverging\nc) Slow To Slow\nd) Clear\nid: asp-408-9\nsvg: signal Y,Y,R DV\narea: aspects\nref: CROR 408\ncror: 408@908a798e6497\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Slow To Stop\nb) Advance Clear To Diverging\n*c) Clear To Limited\nd) Medium To Slow\nid: asp-406-10\nsvg: signal G,R,Gf\narea: aspects\nref: CROR 406\ncror: 406@5e5a3b5a5b48\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Slow To Limited\n*b) Clear To Limited\nc) Advance Clear To Medium\nd) Diverging\nid: asp-406-11\nsvg: signal Y,Gf,R\narea: aspects\nref: CROR 406\ncror: 406@5e5a3b5a5b48\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Limited To Slow\n*b) Clear To Limited\nc) Clear\nd) Advance Clear To Medium\nid: asp-406-12\nsvg: signal Y,G,R L\narea: aspects\nref: CROR 406\ncror: 406@5e5a3b5a5b48\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Advance Clear To Limited\nb) Medium To Clear\n*c) Clear To Medium\nd) Clear To Limited\nid: asp-407-13\nsvg: signal G,R,G\narea: aspects\nref: CROR 407\ncror: 407@f8eb18c7289e\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Limited To Limited\nb) Limited To Diverging\n*c) Clear To Medium\nd) Limited To Medium\nid: asp-407-14\nsvg: signal Y,G,R\narea: aspects\nref: CROR 407\ncror: 407@f8eb18c7289e\ntags: signals aspect\n---\nQ: Which signal indication is this?\n*a) Clear To Slow\nb) Advance Clear To Stop\nc) Diverging To Diverging\nd) Restricting\nid: asp-409-15\nsvg: signal G,R,Yf\narea: aspects\nref: CROR 409\ncror: 409@68c9508b546f\ntags: signals aspect\n---\nQ: Which signal indication is this?\n*a) Clear To Slow\nb) Restricting\nc) Clear To Medium\nd) Advance Clear To Diverging\nid: asp-409-16\nsvg: signal Y,Y,R\narea: aspects\nref: CROR 409\ncror: 409@68c9508b546f\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Medium To Stop\nb) Stop\n*c) Diverging\nd) Slow To Slow\nid: asp-430-17\nsvg: signal R,R,Y DV\narea: aspects\nref: CROR 430\ncror: 430@f7fe24a77a91\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Clear To Limited\n*b) Diverging To Clear\nc) Advance Clear To Diverging\nd) Advance Clear To Medium\nid: asp-428-18\nsvg: signal R,R,G DV\narea: aspects\nref: CROR 428\ncror: 428@b0ed3d6947b4\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Limited To Slow\nb) Stop\n*c) Diverging To Stop\nd) Medium To Clear\nid: asp-429-19\nsvg: signal R,R,Yf DV\narea: aspects\nref: CROR 429\ncror: 429@7fb8e9a5f266\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Limited To Slow\n*b) Limited To Clear\nc) Stop\nd) Restricting\nid: asp-416-20\nsvg: signal R,Gf,R\narea: aspects\nref: CROR 416\ncror: 416@9f480eebb39e\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Slow To Limited\nb) Diverging To Diverging\n*c) Limited To Clear\nd) Medium To Diverging\nid: asp-416-21\nsvg: signal R,G,R L\narea: aspects\nref: CROR 416\ncror: 416@9f480eebb39e\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Slow To Clear\n*b) Limited To Diverging\nc) Restricting\nd) Diverging To Medium\nid: asp-419A-22\nsvg: signal R,Gf,Yf DV\narea: aspects\nref: CROR 419A\ncror: 419A@7c78129bc091\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Medium To Clear\nb) Slow To Slow\n*c) Limited To Limited\nd) Medium To Diverging\nid: asp-417-23\nsvg: signal R,Gf,Gf\narea: aspects\nref: CROR 417\ncror: 417@f3ed3f96058f\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Clear\nb) Limited To Limited\nc) Limited To Stop\n*d) Limited To Medium\nid: asp-418-24\nsvg: signal R,Gf,G\narea: aspects\nref: CROR 418\ncror: 418@b65d2854e6c9\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Limited To Diverging\nb) Diverging\n*c) Limited To Slow\nd) Clear\nid: asp-419-25\nsvg: signal R,Gf,Yf\narea: aspects\nref: CROR 419\ncror: 419@d0578abc7d63\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Diverging To Clear\nb) Slow To Limited\nc) Clear To Limited\n*d) Limited To Stop\nid: asp-421-26\nsvg: signal R,Yf,R\narea: aspects\nref: CROR 421\ncror: 421@71fd50695ad3\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Diverging\n*b) Limited To Stop\nc) Medium To Clear\nd) Medium To Diverging\nid: asp-421-27\nsvg: signal R,Y,R L\narea: aspects\nref: CROR 421\ncror: 421@71fd50695ad3\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Limited To Stop\nb) Medium To Diverging\nc) Limited To Slow\n*d) Medium To Clear\nid: asp-422-28\nsvg: signal R,G,R\narea: aspects\nref: CROR 422\ncror: 422@c70fbca4ba68\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Clear\n*b) Medium To Diverging\nc) Diverging\nd) Limited To Limited\nid: asp-425A-29\nsvg: signal R,G,Yf DV\narea: aspects\nref: CROR 425A\ncror: 425A@895261263a2f\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Clear To Slow\n*b) Medium To Limited\nc) Medium To Medium\nd) Clear To Diverging\nid: asp-423-30\nsvg: signal R,G,Gf\narea: aspects\nref: CROR 423\ncror: 423@a092c070936a\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Diverging To Clear\nb) Medium To Diverging\n*c) Medium To Medium\nd) Limited To Limited\nid: asp-424-31\nsvg: signal R,G,G\narea: aspects\nref: CROR 424\ncror: 424@d17771711695\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Clear To Slow\nb) Slow To Stop\nc) Limited To Slow\n*d) Medium To Slow\nid: asp-425-32\nsvg: signal R,G,Yf\narea: aspects\nref: CROR 425\ncror: 425@81d047a16cb0\ntags: signals aspect\n---\nQ: Which signal indication is this?\n*a) Medium To Stop\nb) Clear\nc) Clear To Medium\nd) Limited To Clear\nid: asp-427-33\nsvg: signal R,Y,R\narea: aspects\nref: CROR 427\ncror: 427@6d650b4d5eaa\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Clear To Limited\nb) Medium To Stop\nc) Limited To Stop\n*d) Restricting\nid: asp-436-34\nsvg: signal R,R,Y\narea: aspects\nref: CROR 436\ncror: 436@37f490734909\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Advance Clear To Stop\n*b) Slow To Clear\nc) Medium To Limited\nd) Limited To Slow\nid: asp-431-35\nsvg: signal R,R,G\narea: aspects\nref: CROR 431\ncror: 431@7d34eaa5dae3\ntags: signals aspect\n---\nQ: Which signal indication is this?\n*a) Slow To Limited\nb) Advance Clear To Stop\nc) Limited To Limited\nd) Slow To Clear\nid: asp-432-36\nsvg: signal R,Yf,Gf\narea: aspects\nref: CROR 432\ncror: 432@3ae77fefd3f4\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Diverging To Clear\n*b) Slow To Medium\nc) Limited To Slow\nd) Diverging To Stop\nid: asp-433-37\nsvg: signal R,Yf,G\narea: aspects\nref: CROR 433\ncror: 433@e28c011ceb30\ntags: signals aspect\n---\nQ: Which signal indication is this?\n*a) Slow To Slow\nb) Limited To Stop\nc) Clear\nd) Clear To Medium\nid: asp-434-38\nsvg: signal R,Yf,Yf\narea: aspects\nref: CROR 434\ncror: 434@21c893ba9e72\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Advance Clear To Medium\nb) Clear To Medium\n*c) Slow To Stop\nd) Medium To Slow\nid: asp-435-39\nsvg: signal R,R,Yf\narea: aspects\nref: CROR 435\ncror: 435@cc78dee9fb57\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Advance Clear To Medium\n*b) Stop\nc) Limited To Diverging\nd) Medium To Diverging\nid: asp-439-40\nsvg: signal R,R,R\narea: aspects\nref: CROR 439\ncror: 439@aaa8ce183001\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Limited To Medium\nb) Limited To Limited\n*c) Diverging To Diverging\nd) Advance Clear To Limited\nid: asp-434A-41\nsvg: signal R,Yf,Yf DV\narea: aspects\nref: CROR 434A\ncror: 434A@7536714d3836\ntags: signals aspect\n---\nQ: Which signal indication is this?\na) Limited To Diverging\n*b) Diverging To Medium\nc) Advance Clear To Slow\nd) Slow To Limited\nid: asp-433A-42\nsvg: signal R,Y,G DV\narea: aspects\nref: CROR 433A\ncror: 433A@e6f01e044a86\ntags: signals aspect\n---\nQ: Clear To Stop (Rule 411) \u2014 what does it require?\na) Proceed.\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-411\narea: indications\nref: CROR 411\ncror: 411@e274ca6a3f4f\ntags: signals indication\n---\nQ: Advance Clear To Diverging (Rule 414A) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-414A\narea: indications\nref: CROR 414A\ncror: 414A@49770fd951f6\ntags: signals indication\n---\nQ: Advance Clear To Limited (Rule 412) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-412\narea: indications\nref: CROR 412\ncror: 412@0f56ab6952be\ntags: signals indication\n---\nQ: Advance Clear To Medium (Rule 413) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-413\narea: indications\nref: CROR 413\ncror: 413@453bcd91368e\ntags: signals indication\n---\nQ: Advance Clear To Slow (Rule 414) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-414\narea: indications\nref: CROR 414\ncror: 414@86db2f0afd2a\ntags: signals indication\n---\nQ: Advance Clear To Stop (Rule 415) \u2014 what does it require?\na) Proceed at REDUCED speed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-415\narea: indications\nref: CROR 415\ncror: 415@5ea5219b57b0\ntags: signals indication\n---\nQ: Clear (Rule 405) \u2014 what does it require?\na) Proceed\n*b) Proceed.\nc) Proceed\nd) Proceed\nid: ind-405\narea: indications\nref: CROR 405\ncror: 405@7cdb3a9b9319\ntags: signals indication\n---\nQ: Clear To Diverging (Rule 408) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-408\narea: indications\nref: CROR 408\ncror: 408@908a798e6497\ntags: signals indication\n---\nQ: Clear To Limited (Rule 406) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-406\narea: indications\nref: CROR 406\ncror: 406@5e5a3b5a5b48\ntags: signals indication\n---\nQ: Clear To Medium (Rule 407) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\nd) Proceed at RESTRICTED speed.\nid: ind-407\narea: indications\nref: CROR 407\ncror: 407@f8eb18c7289e\ntags: signals indication\n---\nQ: Clear To Slow (Rule 409) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-409\narea: indications\nref: CROR 409\ncror: 409@68c9508b546f\ntags: signals indication\n---\nQ: Diverging (Rule 430) \u2014 what does it require?\na) Proceed\n*b) Proceed at REDUCED speed\nc) Proceed\nd) Proceed\nid: ind-430\narea: indications\nref: CROR 430\ncror: 430@f7fe24a77a91\ntags: signals indication\n---\nQ: Diverging To Clear (Rule 428) \u2014 what does it require?\na) Proceed, DIVERGING speed passing signal and through turnouts, approaching next signal at MEDIUM speed.\n*b) Proceed\n*c) Proceed\nd) Proceed.\nid: ind-428\narea: indications\nref: CROR 428\ncror: 428@b0ed3d6947b4\ntags: signals indication\n---\nQ: Diverging To Stop (Rule 429) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\nd) Proceed at REDUCED speed\nid: ind-429\narea: indications\nref: CROR 429\ncror: 429@7fb8e9a5f266\ntags: signals indication\n---\nQ: Limited To Clear (Rule 416) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\nd) Proceed at REDUCED speed\nid: ind-416\narea: indications\nref: CROR 416\ncror: 416@9f480eebb39e\ntags: signals indication\n---\nQ: Limited To Diverging (Rule 419A) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-419A\narea: indications\nref: CROR 419A\ncror: 419A@7c78129bc091\ntags: signals indication\n---\nQ: Limited To Limited (Rule 417) \u2014 what does it require?\n*a) Proceed\nb) Stop.\n*c) Proceed\n*d) Proceed\nid: ind-417\narea: indications\nref: CROR 417\ncror: 417@f3ed3f96058f\ntags: signals indication\n---\nQ: Limited To Medium (Rule 418) \u2014 what does it require?\na) Stop.\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-418\narea: indications\nref: CROR 418\ncror: 418@b65d2854e6c9\ntags: signals indication\n---\nQ: Limited To Slow (Rule 419) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\nd) Proceed at REDUCED speed\nid: ind-419\narea: indications\nref: CROR 419\ncror: 419@d0578abc7d63\ntags: signals indication\n---\nQ: Limited To Stop (Rule 421) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-421\narea: indications\nref: CROR 421\ncror: 421@71fd50695ad3\ntags: signals indication\n---\nQ: Medium To Clear (Rule 422) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-422\narea: indications\nref: CROR 422\ncror: 422@c70fbca4ba68\ntags: signals indication\n---\nQ: Medium To Diverging (Rule 425A) \u2014 what does it require?\na) Stop.\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-425A\narea: indications\nref: CROR 425A\ncror: 425A@895261263a2f\ntags: signals indication\n---\nQ: Medium To Limited (Rule 423) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-423\narea: indications\nref: CROR 423\ncror: 423@a092c070936a\ntags: signals indication\n---\nQ: Medium To Medium (Rule 424) \u2014 what does it require?\n*a) Proceed\nb) Proceed at REDUCED speed\n*c) Proceed\n*d) Proceed\nid: ind-424\narea: indications\nref: CROR 424\ncror: 424@d17771711695\ntags: signals indication\n---\nQ: Medium To Slow (Rule 425) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-425\narea: indications\nref: CROR 425\ncror: 425@81d047a16cb0\ntags: signals indication\n---\nQ: Medium To Stop (Rule 427) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\nd) Proceed at RESTRICTED speed.\nid: ind-427\narea: indications\nref: CROR 427\ncror: 427@6d650b4d5eaa\ntags: signals indication\n---\nQ: Restricting (Rule 436) \u2014 what does it require?\n*a) Proceed at RESTRICTED speed.\nb) Proceed\nc) Proceed\nd) Proceed, DIVERGING speed passing signal and through turnouts, approaching next signal at MEDIUM speed.\nid: ind-436\narea: indications\nref: CROR 436\ncror: 436@37f490734909\ntags: signals indication\n---\nQ: Slow To Clear (Rule 431) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\nd) Proceed at RESTRICTED speed.\nid: ind-431\narea: indications\nref: CROR 431\ncror: 431@7d34eaa5dae3\ntags: signals indication\n---\nQ: Slow To Limited (Rule 432) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-432\narea: indications\nref: CROR 432\ncror: 432@3ae77fefd3f4\ntags: signals indication\n---\nQ: Slow To Medium (Rule 433) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-433\narea: indications\nref: CROR 433\ncror: 433@e28c011ceb30\ntags: signals indication\n---\nQ: Slow To Slow (Rule 434) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-434\narea: indications\nref: CROR 434\ncror: 434@21c893ba9e72\ntags: signals indication\n---\nQ: Slow To Stop (Rule 435) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\n*c) Proceed\n*d) Proceed\nid: ind-435\narea: indications\nref: CROR 435\ncror: 435@cc78dee9fb57\ntags: signals indication\n---\nQ: Stop (Rule 439) \u2014 what does it require?\na) Proceed\nb) Proceed\n*c) Stop.\nd) Proceed\nid: ind-439\narea: indications\nref: CROR 439\ncror: 439@aaa8ce183001\ntags: signals indication\n---\nQ: Diverging To Diverging (Rule 434A) \u2014 what does it require?\n*a) Proceed\n*b) Proceed\nc) Proceed at RESTRICTED speed.\n*d) Proceed\nid: ind-434A\narea: indications\nref: CROR 434A\ncror: 434A@7536714d3836\ntags: signals indication\n---\nQ: Diverging To Medium (Rule 433A) \u2014 what does it require?\na) Proceed\nb) Proceed\n*c) Proceed, DIVERGING speed passing signal and through turnouts, approaching next signal at MEDIUM speed.\nd) Proceed\nid: ind-433A\narea: indications\nref: CROR 433A\ncror: 433A@e6f01e044a86\ntags: signals indication\n';
+
+  // exercises/definitions.txt
+  var definitions_default = '# Definitions\ntime: 60m\npass: 90%\nshuffle: items options\nback: yes\ncror: open\nareas: definitions "Definitions"\n---\nQ: Which term does the CROR define as: \u201CA fixed signal used in connection with one or more signals to govern the approach of a movement to such signal.\u201D\na) Running Switch\n*b) Advance Signal\nc) Advanced Train Dispatching System\nd) Mountain Grade\nid: def-advance-signal\narea: definitions\nref: CROR Advance Signal\ncror: def:advance-signal@1107ed70c1a3\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CTrain control technologies that provide enhancements for protecting overlapping authorities with ability to provide signal indications into protected track.\u201D\na) Limited Speed\n*b) Advanced Train Dispatching System\nc) Running Switch\nd) Humping\nid: def-advanced-train-dispatching-system\narea: definitions\nref: CROR Advanced Train Dispatching System\ncror: def:advanced-train-dispatching-system@a58fa7d4dc1c\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA series of consecutive blocks in which ABS rules apply.\u201D\na) Humping\nb) Exclusive Top\nc) Controlled Point\n*d) Automatic Block Signal System (ABS)\nid: def-automatic-block-signal-system-abs\narea: definitions\nref: CROR Automatic Block Signal System (ABS)\ncror: def:automatic-block-signal-system-abs@69067e66f233\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA length of track of defined limits, the use of which by a movement is governed by block signals.\u201D\na) Railway Company Grade Crossing\nb) Slow Speed\nc) Fixed Signal\n*d) Block\nid: def-block\narea: definitions\nref: CROR Block\ncror: def:block@c747edf02dfc\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA fixed signal at the entrance to a block to govern a movement entering or using that block.\u201D\na) Fixed Signal\nb) Station\nc) Non-Main Track (Nmt)\n*d) Block Signal\nid: def-block-signal\narea: definitions\nref: CROR Block Signal\ncror: def:block-signal@1c770c972769\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CThat portion of the main track or main tracks within limits defined by cautionary limit sign(s).\u201D\n*a) Cautionary Limits\nb) Limited Speed\nc) Electronic Communications Method (ECM)\nd) Reduced Speed\nid: def-cautionary-limits\narea: definitions\nref: CROR Cautionary Limits\ncror: def:cautionary-limits@c4051eed47de\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA block in CTC between consecutive controlled locations or points.\u201D\na) Reduced Speed\n*b) Controlled Block\nc) Controlled Point\nd) Equipment\nid: def-controlled-block\narea: definitions\nref: CROR Controlled Block\ncror: def:controlled-block@1c6cf3c82dff\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA CTC block signal which is capable of displaying a Stop indication until requested to display a less restrictive indication by the RTC.\u201D\na) Controlled Point\nb) Medium Speed\nc) Multi-Track\n*d) Controlled Signal\nid: def-controlled-signal\narea: definitions\nref: CROR Controlled Signal\ncror: def:controlled-signal@cc533b05b2fc\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA location in CTC the limits of which are defined by opposing controlled signals.\u201D\na) Running Switch\n*b) Controlled Location\nc) Track Occupancy Permit (TOP)\nd) Engine In Yard Service\nid: def-controlled-location\narea: definitions\nref: CROR Controlled Location\ncror: def:controlled-location@f903df298e06\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA signal location in CTC consisting of controlled signal(s) in one direction only.\u201D\n*a) Controlled Point\nb) Follow-Up Top\nc) Signal Indication\nd) Transfer\nid: def-controlled-point\narea: definitions\nref: CROR Controlled Point\ncror: def:controlled-point@b511ea72c8c3\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA track joining adjacent main tracks, or a main track and another track.\u201D\na) Tabular General Bulletin Order (Tgbo)\nb) Controlled Block\nc) Train\n*d) Crossover\nid: def-crossover\narea: definitions\nref: CROR Crossover\ncror: def:crossover@5be627c11384\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA document containing applicable information from each GBO, instructions and other information requiring compliance within limits indicated in special instructions.\u201D\na) Train\nb) Track Occupancy Permit (TOP)\n*c) Daily Operating Bulletin (DOB)\nd) Main Track\nid: def-daily-operating-bulletin-dob\narea: definitions\nref: CROR Daily Operating Bulletin (DOB)\ncror: def:daily-operating-bulletin-dob@9d58b019b427\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAn electronic method for transmission and cancellation of authorities, instructions or information.\u201D\na) Controlled Signal\nb) Unattended\nc) Train\n*d) Electronic Communications Method (ECM)\nid: def-electronic-communications-method-ecm\narea: definitions\nref: CROR Electronic Communications Method (ECM)\ncror: def:electronic-communications-method-ecm@e931d5741a85\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA locomotive(s) operated from a single control or a cab control car, used in train, transfer or yard service.\u201D\na) Siding Control Territory (SCT)\n*b) Engine\nc) Railway Company Grade Crossing\nd) General Bulletin Order(S) (GBO)\nid: def-engine\narea: definitions\nref: CROR Engine\ncror: def:engine@cc53b4ab8a14\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAn engine with or without cars utilized exclusively in switching, marshalling, humping, trimming and industrial switching.\u201D\na) Time Table\nb) Station\nc) Exclusive Top\n*d) Engine In Yard Service\nid: def-engine-in-yard-service\narea: definitions\nref: CROR Engine In Yard Service\ncror: def:engine-in-yard-service@7c18243432a4\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201COne or more engines and/or cars which can be handled on their own wheels in a movement.\u201D\na) Follow-Up Top\nb) Siding Control Territory (SCT)\n*c) Equipment\nd) Controlled Location\nid: def-equipment\narea: definitions\nref: CROR Equipment\ncror: def:equipment@5f31c274e1d9\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA TOP that provides exclusive occupancy of the track to one foreman. No more than two track units can operate within the limits of an Exclusive TOP.\u201D\na) Gravity Drop\n*b) Exclusive Top\nc) Controlled Location\nd) Block\nid: def-exclusive-top\narea: definitions\nref: CROR Exclusive Top\ncror: def:exclusive-top@5b9a38fac0d8\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA signal or sign at a fixed location indicating a condition affecting the operation of a movement.\u201D\na) Mountain Grade\nb) Main Track\n*c) Fixed Signal\nd) Electronic Communications Method (ECM)\nid: def-fixed-signal\narea: definitions\nref: CROR Fixed Signal\ncror: def:fixed-signal@c9e2a00a753e\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA TOP issued within limits of a movement(s) that has passed or will be identified by the foreman as having passed the foreman\u2019s location.\u201D\na) Time Table\nb) Transfer\nc) Advance Signal\n*d) Follow-Up Top\nid: def-follow-up-top\narea: definitions\nref: CROR Follow-Up Top\ncror: def:follow-up-top@39e45672b430\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CInstructions regarding track condition restrictions and other information that affect the safety and operation of a movement.\u201D\na) Limited Speed\nb) Gravity Drop\nc) Track Occupancy Permit (TOP)\n*d) General Bulletin Order(S) (GBO)\nid: def-general-bulletin-order-s-gbo\narea: definitions\nref: CROR General Bulletin Order(S) (GBO)\ncror: def:general-bulletin-order-s-gbo@c4d681118854\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CReleasing stationary equipment and permitting it to roll under its own momentum.\u201D\na) Turnout Speed\nb) Slow Speed\nc) Electronic Communications Method (ECM)\n*d) Gravity Drop\nid: def-gravity-drop\narea: definitions\nref: CROR Gravity Drop\ncror: def:gravity-drop@ecd1350a74fa\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAny location where a railway track intersects with an authorized road, sidewalk, path, or trail, excluding Railway Company Grade Crossings.\u201D\n*a) Grade Crossing\nb) Track Unit (Tu)\nc) Exclusive Top\nd) Movement(S)\nid: def-grade-crossing\narea: definitions\nref: CROR Grade Crossing\ncror: def:grade-crossing@40aef22340a6\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA portion of a track 2 miles in length or greater, with an average grade greater than 1.0%, and less than or equal to 1.8%.\u201D\na) Engine\nb) Siding Control Territory (SCT)\n*c) Heavy Grade\nd) Schedule\nid: def-heavy-grade\narea: definitions\nref: CROR Heavy Grade\ncror: def:heavy-grade@107c28a7b52a\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA track, or portion of a track, other than a main track, subdivision track, or siding; identified in special instructions, on which unattended equipment requires the application of Rule 112(a).\u201D\na) Equipment\nb) Trailing End\nc) Unattended\n*d) High Risk Location\nid: def-high-risk-location\narea: definitions\nref: CROR High Risk Location\ncror: def:high-risk-location@604f17666d01\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAny location where a railway track intersects with a road, sidewalk, path, or trail, that is opened or maintained by a railway company that is the sole authority of the crossing.\u201D\na) Turnout Speed\nb) Automatic Block Signal System (ABS)\nc) High Risk Location\n*d) Railway Company Grade Crossing\nid: def-railway-company-grade-crossing\narea: definitions\nref: CROR Railway Company Grade Crossing\ncror: def:railway-company-grade-crossing@010e279653a0\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CPushing equipment at a regulated speed then releasing it under its own momentum, in an engineered environment where the route and speed are controlled through automated or assisted devices.\u201D\na) Method Of Control\n*b) Humping\nc) Track Unit (Tu)\nd) Follow-Up Top\nid: def-humping\narea: definitions\nref: CROR Humping\ncror: def:humping@45f34dd744ff\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAn arrangement of interconnected signals and signal appliances for which interlocking rules and special instructions are in effect.\u201D\na) Engine In Yard Service\nb) Movement(S)\n*c) Interlocking\nd) Slow Speed\nid: def-interlocking\narea: definitions\nref: CROR Interlocking\ncror: def:interlocking@f475fbb43979\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CThe tracks between the extreme or outer opposing interlocking signals of an interlocking.\u201D\n*a) Interlocking Limits\nb) Siding\nc) Advanced Train Dispatching System\nd) Schedule\nid: def-interlocking-limits\narea: definitions\nref: CROR Interlocking Limits\ncror: def:interlocking-limits@c9566a377f3d\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA fixed signal at the entrance to or within interlocking limits to govern the use of the routes.\u201D\na) Grade Crossing\nb) Siding\n*c) Interlocking Signal\nd) Gravity Drop\nid: def-interlocking-signal\narea: definitions\nref: CROR Interlocking Signal\ncror: def:interlocking-signal@75dca187f69f\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CPushing equipment then releasing it under its own momentum. Does not include humping.\u201D\na) Multi-Track\nb) Mountain Grade\nc) Siding\n*d) Kicking\nid: def-kicking\narea: definitions\nref: CROR Kicking\ncror: def:kicking@8295ad3d26f0\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA track of a subdivision extending through and between stations governed by one or more methods of control upon which movements, track units and track work must be authorized.\u201D\na) Exclusive Top\nb) Controlled Location\n*c) Main Track\nd) Limited Speed\nid: def-main-track\narea: definitions\nref: CROR Main Track\ncror: def:main-track@53f9b67162ad\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CRules and/or special instructions governing the use of a track(s).\u201D\na) Trailing End\nb) Controlled Signal\nc) Block Signal\n*d) Method Of Control\nid: def-method-of-control\narea: definitions\nref: CROR Method Of Control\ncror: def:method-of-control@6023eb6f2a99\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA portion of a track 2 miles in length or greater, with an average grade greater than 1.8%.\u201D\na) Heavy Grade\nb) Turnout Speed\n*c) Mountain Grade\nd) Method Of Control\nid: def-mountain-grade\narea: definitions\nref: CROR Mountain Grade\ncror: def:mountain-grade@6392f5e521df\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CThe term used in these rules to indicate that the rule is applicable to trains, transfers or engines in yard service.\u201D\na) Time Table\nb) Advance Signal\nc) Unattended\n*d) Movement(S)\nid: def-movement-s\narea: definitions\nref: CROR Movement(S)\ncror: def:movement-s@b4ae5b6fcd84\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CTwo or more main tracks of a subdivision at the same location.\u201D\na) Heavy Grade\nb) Main Track\nc) Limited Speed\n*d) Multi-Track\nid: def-multi-track\narea: definitions\nref: CROR Multi-Track\ncror: def:multi-track@3a3fbb80fe38\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAny track(s) other than those listed in time table columns as having CTC, OCS, ABS or Cautionary Limits applicable and unless otherwise provided include a requirement to operate at REDUCED speed.\u201D\na) Method Of Control\nb) Automatic Block Signal System (ABS)\nc) Running Switch\n*d) Non-Main Track (Nmt)\nid: def-non-main-track-nmt\narea: definitions\nref: CROR Non-Main Track (Nmt)\ncror: def:non-main-track-nmt@da3ffa00af39\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA siding where non-main track rules apply, the use of which may be governed by special instructions.\u201D\na) Controlled Point\nb) Siding\nc) Non-Main Track (Nmt)\n*d) Non-Signalled Siding\nid: def-non-signalled-siding\narea: definitions\nref: CROR Non-Signalled Siding\ncror: def:non-signalled-siding@c69f12e5840a\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CPulling equipment then releasing it under its own momentum.\u201D\n*a) Running Switch\nb) Signal Indication\nc) High Risk Location\nd) Siding\nid: def-running-switch\narea: definitions\nref: CROR Running Switch\ncror: def:running-switch@46f0e1422fce\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CInformation pertaining to the operating times of a passenger train.\u201D\na) Advanced Train Dispatching System\nb) Transfer\n*c) Schedule\nd) Time Table\nid: def-schedule\narea: definitions\nref: CROR Schedule\ncror: def:schedule@a494e3a29f3f\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA track adjacent and connected to the main track which is so designated in the time table, GBO or operating bulletin.\u201D\na) Movement(S)\nb) Method Of Control\nc) Grade Crossing\n*d) Siding\nid: def-siding\narea: definitions\nref: CROR Siding\ncror: def:siding@2ae7f0a8510e\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CNon-signalled sidings indicated in special instructions where SCT rules are applicable.\u201D\n*a) Siding Control Territory (SCT)\nb) Heavy Grade\nc) Main Track\nd) Advance Signal\nid: def-siding-control-territory-sct\narea: definitions\nref: CROR Siding Control Territory (SCT)\ncror: def:siding-control-territory-sct@2d994ce77230\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CThe information conveyed by a fixed signal.\u201D\na) Block\n*b) Signal Indication\nc) Slow Speed\nd) Kicking\nid: def-signal-indication\narea: definitions\nref: CROR Signal Indication\ncror: def:signal-indication@1ee49d231a3b\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA speed not exceeding 25 miles per hour.\u201D\na) Track Occupancy Permit (TOP)\nb) Cautionary Limits\nc) Slow Speed\n*d) Diverging Speed\nid: def-diverging-speed\narea: definitions\nref: CROR Diverging Speed\ncror: def:diverging-speed@aa2971b56b8d\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA speed not exceeding 45 miles per hour.\u201D\n*a) Limited Speed\nb) Station\nc) Transfer\nd) General Bulletin Order(S) (GBO)\nid: def-limited-speed\narea: definitions\nref: CROR Limited Speed\ncror: def:limited-speed@8ed3de477f3d\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA speed not exceeding 30 miles per hour.\u201D\na) Non-Main Track (Nmt)\nb) Interlocking Limits\nc) Railway Company Grade Crossing\n*d) Medium Speed\nid: def-medium-speed\narea: definitions\nref: CROR Medium Speed\ncror: def:medium-speed@ca5e9f04bdc8\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA speed that will permit stopping within one-half the range of vision of equipment.\u201D\na) Schedule\nb) Non-Main Track (Nmt)\n*c) Reduced Speed\nd) Automatic Block Signal System (ABS)\nid: def-reduced-speed\narea: definitions\nref: CROR Reduced Speed\ncror: def:reduced-speed@6f412e3f5042\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA speed not exceeding 15 miles per hour.\u201D\na) Equipment\nb) Advance Signal\n*c) Slow Speed\nd) Transfer\nid: def-slow-speed\narea: definitions\nref: CROR Slow Speed\ncror: def:slow-speed@d6e3f7a49348\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CUnless otherwise provided by signal indication or special instructions, a speed not exceeding 15 MPH.\u201D\na) Advance Signal\nb) Running Switch\n*c) Turnout Speed\nd) Interlocking Limits\nid: def-turnout-speed\narea: definitions\nref: CROR Turnout Speed\ncror: def:turnout-speed@1a02966c4b89\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA location identified by a station name sign and designated by that name in the time table.\u201D\n*a) Station\nb) Crossover\nc) Unattended\nd) Running Switch\nid: def-station\narea: definitions\nref: CROR Station\ncror: def:station@78a919df7a3e\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CRailway trackage designated by time table.\u201D\na) High Risk Location\n*b) Subdivision\nc) Non-Signalled Siding\nd) Movement(S)\nid: def-subdivision\narea: definitions\nref: CROR Subdivision\ncror: def:subdivision@04e1870669ae\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA document specific to a movement, containing applicable information from each GBO, instructions and other information requiring compliance within limits indicated in the TGBO.\u201D\na) Medium Speed\nb) Engine\nc) Signal Indication\n*d) Tabular General Bulletin Order (Tgbo)\nid: def-tabular-general-bulletin-order-tgbo\narea: definitions\nref: CROR Tabular General Bulletin Order (Tgbo)\ncror: def:tabular-general-bulletin-order-tgbo@f2e7f1e67c29\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CThe special instruction that contains subdivision description information and footnotes relating to the operation of movements and track units. Time table may contain information applicable on other tracks.\u201D\na) Kicking\nb) Running Switch\n*c) Time Table\nd) Transfer\nid: def-time-table\narea: definitions\nref: CROR Time Table\ncror: def:time-table@4713121d906b\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAuthority issued for the protection of track units and track work.\u201D\na) Controlled Signal\nb) Running Switch\nc) Reduced Speed\n*d) Track Occupancy Permit (TOP)\nid: def-track-occupancy-permit-top\narea: definitions\nref: CROR Track Occupancy Permit (TOP)\ncror: def:track-occupancy-permit-top@fc32c7a5777b\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA vehicle or machine capable of on-track operation utilized for track inspection, track work and other railway activities when on a track.\u201D\na) Engine\nb) General Bulletin Order(S) (GBO)\nc) Medium Speed\n*d) Track Unit (Tu)\nid: def-track-unit-tu\narea: definitions\nref: CROR Track Unit (Tu)\ncror: def:track-unit-tu@d3da9ce7e6d4\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAny work on or near the track that may render the track unsafe for movements at normal speed or where protection against movements may be required for employees and machines involved in track construction and repairs.\u201D\na) General Bulletin Order(S) (GBO)\n*b) Track Work\nc) Train\nd) Follow-Up Top\nid: def-track-work\narea: definitions\nref: CROR Track Work\ncror: def:track-work@9be73c434d38\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CThe tail end of the last piece of equipment in a movement in the direction of travel.\u201D\na) Running Switch\nb) Turnout Speed\n*c) Trailing End\nd) Schedule\nid: def-trailing-end\narea: definitions\nref: CROR Trailing End\ncror: def:trailing-end@75fbf99e671a\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAn engine with or without cars intended to operate on the main track at speeds in excess of 15 MPH or a track unit when so designated.\u201D\na) Interlocking\n*b) Train\nc) Track Work\nd) Track Occupancy Permit (TOP)\nid: def-train\narea: definitions\nref: CROR Train\ncror: def:train@a8df880123fd\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CAn engine with or without cars operating on main track at speeds not exceeding 15 MPH.\u201D\n*a) Transfer\nb) Non-Main Track (Nmt)\nc) Running Switch\nd) Movement(S)\nid: def-transfer\narea: definitions\nref: CROR Transfer\ncror: def:transfer@835052f7156c\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CWhen an employee is not in close enough proximity to take effective action.\u201D\na) Interlocking Limits\nb) Engine In Yard Service\nc) Automatic Block Signal System (ABS)\n*d) Unattended\nid: def-unattended\narea: definitions\nref: CROR Unattended\ncror: def:unattended@83cf5b7eb9ee\ntags: definitions\n---\nQ: Which term does the CROR define as: \u201CA system of non-main tracks, utilized to switch equipment and for other purposes over which movements may operate subject to prescribed signals, rules and special instructions.\u201D\na) Fixed Signal\n*b) Yard\nc) Slow Speed\nd) Station\nid: def-yard\narea: definitions\nref: CROR Yard\ncror: def:yard@56b2874ef810\ntags: definitions\n';
+
+  // exercises/index.js
+  var exercises = [
+    { name: "Signals \u2014 aspects and indications", about: "Read the aspect, name the indication; name the indication, say what it requires. Rules 405\u2013439.", source: signals_default },
+    { name: "Definitions", about: "Match the CROR definition to its term.", source: definitions_default }
+  ];
 
   // src/app/crew.js
   var now = () => Date.now();
@@ -1007,22 +1386,38 @@ ${box}`);
       ),
       log.released?.hash ? h("p", { class: "small" }, "Your last release: ", h("span", { class: "complete" }, log.released.hash), " \u2014 the cancellation must name this hash.") : null,
       dropBox2("Drop or paste a test, or a cancellation"),
+      exerciseBox(go4),
       h("h2", {}, "Practice"),
       h("p", { class: "small" }, "Drop a test source (.txt, with answers) here to run the same drill on it \u2014 repeat, fullscreen, one item at a time \u2014 and mark yourself. Not for record."),
       practiceBox(go4)
     );
+  };
+  var exerciseBox = (go4) => {
+    const box = h(
+      "div",
+      { class: "card" },
+      h("h2", {}, "Exercises"),
+      h("p", { class: "small" }, "Open book, not for record. Every question is tied to the public CROR 2025 (Rulebook in the top bar; load cror-2025.json once to have it beside you while you write)."),
+      h("ul", { class: "steps" }, exercises.map((x) => h("li", {}, h("button", { onclick: () => go4({ screen: "practice", source: x.source }) }, x.name), " ", h("span", { class: "small" }, x.about))))
+    );
+    getDocument().then((d) => {
+      if (!d) box.append(h("p", { class: "small bad" }, "No rulebook loaded in this browser yet."));
+    });
+    return box;
   };
   var clearanceSvg = (tgbo, p) => svgFor(`form clearance kind="Clearance" no=${tgbo.clearance} to="Crew ${p.pin}" proceed="item 1 \u2192 item ${tgbo.order.length}" until="repeated back" call="before ${fmtTime(tgbo.settings.time)}" complete="${hhmm()}" rtc="${tgbo.rtcName || ""}"`);
   var renderCopy = async (root4, { text: text2, practice, source }, go4) => {
     const p = await me();
     if (!p) return mount(root4, h("h1", {}, "Not registered"), h("p", {}, "Register first; a test is addressed to your key."));
     let tgbo;
+    const trust = p.minted?.root ? { root: p.minted.root.sig } : null;
     try {
-      tgbo = practice ? await practiceTest(p, source) : await copyTest(text2, p, p.pin);
+      tgbo = practice ? await practiceTest(p, source) : await copyTest(text2, p, p.pin, Date.now(), trust);
     } catch (e) {
       return mount(root4, h("h1", {}, "Cannot copy this test"), h("p", { class: "bad" }, e.message), h("button", { onclick: () => go4({ screen: "home" }) }, "Back"));
     }
     const saved = practice ? null : await get("attempt:" + tgbo.id);
+    const book2 = tgbo.settings.openBook || practice ? await getDocument() : null;
     const repeat = h("input", { placeholder: "Repeat (4 characters)", maxlength: 4, autocomplete: "off", style: { textTransform: "uppercase", maxWidth: "240px" } });
     const status = h("p", { class: "status" });
     const form2 = h("img", { src: "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(clearanceSvg(tgbo, p)))), style: { maxWidth: "100%" }, alt: "clearance" });
@@ -1049,12 +1444,13 @@ ${box}`);
     mount(
       root4,
       h("h1", {}, tgbo.title),
-      tgbo.approval ? h("p", { class: "small good" }, `Approved by ${tgbo.approval.name}`) : null,
+      tgbo.approval ? h("p", { class: "small good" }, `Approved by ${tgbo.approval.name}${trust ? " \u2014 the superintendent over your RTC; every item is checked against that approval as it opens" : ""}`) : practice ? null : h("p", { class: "small bad" }, "Not approved by any superintendent."),
       h(
         "div",
         { class: "card" },
         form2,
         h("p", {}, `Clearance No. ${tgbo.clearance} to Crew ${p.pin} \xB7 ${tgbo.order.length} items \xB7 ${fmtTime(tgbo.settings.time)} \xB7 pass ${Math.round(tgbo.settings.pass * 100)}%`),
+        tgbo.settings.openBook ? h("p", { class: "small" }, "Open book: the rulebook may be consulted while writing (Rulebook button). ", book2 ? `${book2.title} ${book2.edition || ""} is loaded.` : h("b", { class: "bad" }, "No rulebook is loaded in this browser \u2014 load cror-2025.json first if you want it.")) : null,
         tgbo.window ? h("p", { class: "small" }, `Window: ${new Date(tgbo.window.from).toLocaleString()} \u2192 ${new Date(tgbo.window.until).toLocaleString()}. Outside it the clearance does not open, and a late release is flagged to the RTC.`) : null,
         h("p", {}, "Rule 136 \u2014 copy as transmitted, then repeat back:"),
         h("p", { class: "complete" }, `Complete ${hhmm()} \xB7 RTC ${tgbo.rtcName || ""} \xB7 `, h("b", {}, tgbo.complete)),
@@ -1160,6 +1556,20 @@ ${box}`);
       if (tgbo.settings.allowBack && s.at > 0) show(s.at - 1);
     };
     const guard = h("div", { class: "guard", style: { display: "none" } });
+    const book2 = tgbo.settings.openBook || practice ? await getDocument() : null;
+    const openBook2 = async () => {
+      if (!book2) return;
+      log("book", "open");
+      const ov = h("div", { class: "overlay book" });
+      const box = h("div", { class: "bookbox" });
+      ov.append(box);
+      document.body.append(ov);
+      renderReader(box, { doc: book2, notes: await getNotes(book2.id), readOnly: true, compact: true, onClose: () => {
+        ov.remove();
+        log("book", "close");
+        canvas.focus();
+      } });
+    };
     const onBreak = (why) => {
       if (state().finished || state().open) return;
       log("break", why);
@@ -1257,7 +1667,7 @@ ${box}`);
     mount(
       root4,
       h("div", { class: "bar" }, h("span", {}, tgbo.title), timer, h("span", { class: "row" }, avatar(p, 28), ` Crew ${p.pin}`)),
-      h("div", { class: "work" }, canvas, answerBox, h("div", { class: "row" }, tgbo.settings.allowBack ? h("button", { onclick: prev }, "\u2190 Back") : null, h("button", { onclick: next }, "Next \u2192"), h("button", { class: "primary", onclick: () => submit("done") }, "Release track"), status)),
+      h("div", { class: "work" }, canvas, answerBox, h("div", { class: "row" }, tgbo.settings.allowBack ? h("button", { onclick: prev }, "\u2190 Back") : null, h("button", { onclick: next }, "Next \u2192"), book2 ? h("button", { onclick: openBook2 }, "Rulebook") : null, h("button", { class: "primary", onclick: () => submit("done") }, "Release track"), status)),
       guard
     );
     canvas.addEventListener("click", click);
@@ -1345,25 +1755,78 @@ ${box}`);
   };
   var openBook = (text2, passphrase) => openSheet(text2, passphrase, "BOOK");
 
-  // src/director.js
-  var approveSource = async (director, source, title) => {
-    const hash = await sourceHash(source);
-    const signature = await signBytes(director.sign, utf8(`ballast/approval/1
-${hash}`));
-    return armor("APPROVAL", { v: 1, kind: "approval", hash, title, by: director.sig, pub: director.pub, name: director.name, signature }, { title, hash: hash.slice(0, 12), by: director.name });
+  // src/reader/linkcheck.js
+  var CITE = /^(ref):\s*(.+)$/im;
+  var refsOf = (line) => line.split(/\s*[,;]\s*|\s+(?=CROR|GOI|GR)/).filter(Boolean);
+  var linkSource = (ix, source) => {
+    const blocks2 = source.replace(/\r\n/g, "\n").split(/\n---+\n/);
+    const report = [];
+    const out = blocks2.map((block, i) => {
+      if (i === 0) return block;
+      const lines = block.split("\n").filter((l) => !/^cror:/i.test(l));
+      const refLine = lines.find((l) => CITE.test(l));
+      if (!refLine) {
+        report.push({ item: i, refs: [], links: [], unresolved: [] });
+        return lines.join("\n");
+      }
+      const refs = refsOf(refLine.replace(/^ref:\s*/i, ""));
+      const links = [], unresolved = [];
+      for (const r of refs) {
+        const id = resolve(ix, r);
+        if (id) links.push(`${id}@${ix.get(id).hash}`);
+        else unresolved.push(r);
+      }
+      report.push({ item: i, refs, links, unresolved });
+      if (!links.length) return lines.join("\n");
+      const at = lines.indexOf(refLine);
+      lines.splice(at + 1, 0, `cror: ${links.join(" ")}`);
+      return lines.join("\n");
+    });
+    return { source: out.join("\n---\n"), report };
   };
-  var readApproval = async (text2) => (await dearmor(text2, "APPROVAL")).body;
-  var checkApproval = async (approval, source) => await sourceHash(source) === approval.hash && verifyBytes(approval.by, approval.signature, utf8(`ballast/approval/1
-${approval.hash}`));
-  var sendReport = async (teacher, directorPub, report) => {
-    const salt = unb64url(report.test);
-    const key = await hkdfKey(await shared(teacher.priv, directorPub), salt, INFO.report);
-    return armor("REPORT", { v: 1, kind: "report", test: report.test, teacher: teacher.pub, box: await sealJSON(key, report) }, { title: report.title, teacher: teacher.name, trains: report.rows.length });
+  var checkSource = (ix, source) => {
+    const blocks2 = source.replace(/\r\n/g, "\n").split(/\n---+\n/).slice(1);
+    const rows = [];
+    blocks2.forEach((block, i) => {
+      if (!block.trim()) return;
+      const q = (block.match(/^Q:\s?(.*)$/m) || [])[1] || "";
+      const idLine = (block.match(/^id:\s*(\S+)/m) || [])[1] || null;
+      const links = (block.match(/^cror:\s*(.+)$/im) || [])[1]?.split(/[\s,;]+/).filter(Boolean) || [];
+      const refs = (block.match(/^ref:\s*(.+)$/im) || [])[1] ? refsOf(block.match(/^ref:\s*(.+)$/im)[1]) : [];
+      const checks = links.map((l) => checkLink(ix, l));
+      const unresolved = refs.filter((r) => !resolve(ix, r));
+      const status = !links.length ? refs.length ? "unlinked" : "no-ref" : checks.some((c) => c.status === "missing") ? "missing" : checks.some((c) => c.status === "changed") ? "changed" : "ok";
+      rows.push({ item: i + 1, id: idLine, prompt: q.slice(0, 80), refs, links: checks, unresolved, status });
+    });
+    return rows;
   };
-  var takeReport = async (text2, director) => {
-    const { body } = await dearmor(text2, "REPORT");
-    const key = await hkdfKey(await shared(director.priv, body.teacher), unb64url(body.test), INFO.report);
-    return { teacher: body.teacher, report: await openJSON(key, body.box) };
+
+  // src/app/bookcheck.js
+  var cls = { ok: "good", changed: "bad", missing: "bad", unlinked: "small", "no-ref": "small" };
+  var bookCheck = (source, onLinked) => {
+    const box = h("div", { class: "card" });
+    const out = h("div");
+    getDocument().then((doc) => {
+      if (!doc) return box.append(h("p", { class: "small" }, "Load a rulebook (Rulebook in the top bar) to check this test against it."));
+      const ix = index(doc);
+      const show = (rows) => {
+        const n = (s) => rows.filter((r) => r.status === s).length;
+        out.replaceChildren(
+          h("p", {}, `${doc.title} ${doc.edition || ""}: ${n("ok")} ok \xB7 ${n("changed")} changed \xB7 ${n("missing")} missing \xB7 ${n("unlinked") + n("no-ref")} not linked`),
+          h("table", {}, rows.map((r) => h("tr", {}, h("td", {}, r.id || r.item), h("td", { class: "small" }, r.prompt), h("td", { class: cls[r.status] }, r.status, r.unresolved.length ? ` \u2014 cannot resolve ${r.unresolved.join(", ")}` : "", r.links.filter((l) => l.status !== "ok").map((l) => ` \u2014 ${l.id} ${l.status}`).join("")))))
+        );
+      };
+      box.append(
+        h("p", { class: "small" }, "Check reads each item's cror: links against the loaded rulebook: changed means the rule's wording moved since the item was written; missing means the rule is gone. Link writes cror: lines from ref: lines."),
+        h("div", { class: "row" }, h("button", { onclick: () => show(checkSource(ix, source)) }, "Check against rulebook"), onLinked ? h("button", { onclick: () => {
+          const r = linkSource(ix, source);
+          onLinked(r.source);
+          show(checkSource(ix, r.source));
+        } }, "Link refs to rulebook") : null),
+        out
+      );
+    });
+    return box;
   };
 
   // src/app/rtc.js
@@ -1589,6 +2052,7 @@ ${approval.hash}`));
       const crew = c ? sheet.trains.filter((t) => c.pins.includes(t.pin)) : sheet.trains;
       if (!crew.length) return note(c ? `no crew in ${c.name}` : "no crew on the sheet", true), rerender();
       const approval = await approvalFor(d.source);
+      if (!approval && !confirm("No superintendent approval covers this source. Crew refuse unapproved tests. Issue anyway (for practice only)?")) return;
       let text2, record;
       try {
         ({ text: text2, record } = await issueTest(d.test, sheet.rtc, crew, sheet.assets, sheet.rtc.name, approval, win));
@@ -1623,6 +2087,12 @@ ${approval.hash}`));
           issueTo = e.target.value;
         } }, h("option", { value: "", selected: !issueTo }, `all crew (${sheet.trains.length})`), sheet.classes.map((c) => h("option", { value: c.id, selected: issueTo === c.id }, `${c.name} (${c.pins.length})`))), h("button", { class: "primary", onclick: issue }, "Issue test"))
       ) : h("p", { class: "status" }, "No test source loaded."),
+      d ? bookCheck(d.source, async (src) => {
+        const { test, errors } = await parseTest(src);
+        sheet.draft = { ...d, source: src, test: errors.length ? null : test, errors };
+        note("draft linked to the rulebook \u2014 its hash changed, so any approval no longer covers it", true);
+        rerender();
+      }) : null,
       h("h2", {}, "Issued"),
       h("table", {}, sheet.tests.map((t) => h("tr", {}, h("td", {}, t.title), h("td", { class: "small" }, t.class || ""), h("td", { class: "small" }, new Date(t.issued).toLocaleString()), h("td", {}, `${t.trains?.length ?? "?"} clearances`), h("td", { class: "small" }, t.window ? `${new Date(t.window.from).toLocaleString()} \u2192 ${new Date(t.window.until).toLocaleString()}` : ""), h("td", { class: t.approved ? "good small" : "small" }, t.approved ? "approved" : "unapproved"), h("td", { class: "complete small" }, t.hash.slice(0, 4).toUpperCase()), h("td", {}, h("button", { onclick: () => download(`${t.title.replace(/\W+/g, "-")}.test.txt`, t.text) }, "download again"))))),
       h("h2", {}, "Assets"),
@@ -2005,6 +2475,7 @@ ${approval.hash}`));
       } }, "Add to inventory"))
     );
   };
+  var checking = null;
   var inventoryTab = () => h(
     "div",
     {},
@@ -2021,6 +2492,10 @@ ${approval.hash}`));
         h("td", {}, s.items),
         h("td", { class: "small complete" }, s.hash.slice(0, 12)),
         h("td", { class: s.approved ? "good" : "small" }, s.approved ? `approved ${new Date(s.approved).toLocaleDateString()}` : "not approved"),
+        h("td", {}, h("button", { onclick: () => {
+          checking = checking === s.hash ? null : s.hash;
+          rerender2();
+        } }, "Rulebook check")),
         h("td", {}, h("button", { class: s.approved ? "" : "primary", onclick: async () => {
           const text2 = await approveSource(book.rtc, s.source, s.title);
           s.approved = Date.now();
@@ -2029,7 +2504,14 @@ ${approval.hash}`));
           rerender2();
         } }, s.approved ? "approval again" : "Approve"), " ", h("button", { onclick: () => download(s.name, s.source) }, "source"))
       ))
-    )
+    ),
+    checking && book.sources.find((s) => s.hash === checking) ? bookCheck(book.sources.find((s) => s.hash === checking).source, async (src) => {
+      const old = book.sources.find((s) => s.hash === checking);
+      await addSource(old.name, src);
+      checking = null;
+      note2("source linked to the rulebook: new hash, approve it again", true);
+      rerender2();
+    }) : null
   );
   var openReport = null;
   var profileView = (x) => {
@@ -2179,6 +2661,23 @@ ${approval.hash}`));
   };
   var openText = async (text2, name = "") => {
     const p = await me2();
+    if (/^\s*\{/.test(text2)) {
+      try {
+        const j = JSON.parse(text2);
+        if (j.kind === "document") {
+          await saveDocument(checkDocument(j));
+          return go3({ screen: "reader", doc: j.id });
+        }
+        if (j.kind === "notes") {
+          const n = importNotes(text2);
+          await setNotes(n.document, merge(await getNotes(n.document), n.notes));
+          return go3({ screen: "reader", doc: n.document });
+        }
+        throw new Error("JSON, but neither a document nor notes");
+      } catch (e) {
+        return go3({ screen: "home", error: `${name || "file"}: ${e.message}` });
+      }
+    }
     const bs = blocks(text2);
     if (bs.length > 1 && p?.role === "crew") {
       const mine = bs.find((b) => new RegExp(`^train: Crew ${p.pin}$`, "m").test(b)) || bs.find((b) => /BEGIN BALLAST TEST/.test(b));
@@ -2245,6 +2744,7 @@ ${approval.hash}`));
       h("textarea", { readonly: true, rows: 6, value: text2 }),
       ctx.error ? h("p", { class: "bad" }, ctx.error) : null,
       dropBox("Drop or paste the profile you get back"),
+      exerciseBox(go3),
       h(
         "details",
         {},
@@ -2258,6 +2758,14 @@ ${approval.hash}`));
       )
     );
   };
+  var renderReaderScreen = async (p) => {
+    const doc = await getDocument(ctx.doc);
+    if (!doc) return mount(root3, h("h1", {}, "Rulebook"), h("p", {}, "No rulebook is loaded in this browser. Get cror-2025.json from the Reader page (Document out) and drop it here; it stays in this browser. Notes files (from the reader's Notes out) drop here too."), dropBox("Drop cror-2025.json here"), h("button", { onclick: () => go3({ screen: "home" }) }, "Back"));
+    renderReader(root3, { doc, notes: await getNotes(doc.id), onNotes: (n) => setNotes(doc.id, n), onDocument: async (d) => {
+      await saveDocument(d);
+      go3({ screen: "reader", doc: d.id });
+    }, by: p.name, at: ctx.at || null, onClose: () => go3({ screen: "home" }) });
+  };
   var render3 = async () => {
     const p = await me2();
     announce(ctx.screen, p);
@@ -2265,6 +2773,7 @@ ${approval.hash}`));
       await set("profile", np);
       go3({ screen: "home" });
     });
+    if (ctx.screen === "reader" && p) return renderReaderScreen(p);
     if (p && (p.role === "none" || !p.minted) && !["work", "practice", "marks", "released"].includes(ctx.screen)) return renderWaiting(p);
     switch (ctx.screen) {
       case "home":
@@ -2298,6 +2807,10 @@ ${approval.hash}`));
     } }, "Ballast"),
     " \xB7 ",
     embedded() || location.protocol === "file:" ? null : h("a", { href: location.pathname.split("/").pop() || "index.html", download: "ballast.html", class: "small", style: { marginRight: "12px" }, title: "Save this page as one file, ballast.html, e.g. on a shared drive \u2014 the recommended way to run it" }, "Save a copy"),
+    h("a", { href: "#", class: "small", style: { marginRight: "12px" }, onclick: (e) => {
+      e.preventDefault();
+      go3({ screen: "reader" });
+    } }, "Rulebook"),
     embedded() ? null : h("a", { href: /\/ballast\//.test(location.pathname) ? "../tutorial/" : "tutorial/", class: "small", style: { marginRight: "12px" } }, "Tutorial"),
     h("a", { href: "#", onclick: async (e) => {
       e.preventDefault();

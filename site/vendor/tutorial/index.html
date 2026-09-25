@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-vAFQ7GusuxLhme355r78pGqmMg/lmdz469fuMiClhZY='; style-src 'sha256-I2JYYkK2zdnnCoamNX0mZ2WrIt+z7qDmgaeZiazbFps='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-2ZpUkmQzgutUc4QNoWccmnb8g1+IM8byXsdeUjTgxRo='; style-src 'sha256-I2JYYkK2zdnnCoamNX0mZ2WrIt+z7qDmgaeZiazbFps='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast tutorial</title>
 <style>* { box-sizing:border-box } html, body { margin:0; height:100%; font:14px/1.4 "Segoe UI", Arial, sans-serif; overflow:hidden; background:#0b3d5c }
 .desk { position:absolute; inset:0; background:radial-gradient(ellipse at 30% 20%, #1e6a8f 0%, #0b3d5c 55%, #072a40 100%); overflow:hidden }
@@ -184,26 +184,35 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
       };
       sourceHash = async (source) => Array.from(await sha256(utf8(source.replace(/\r\n/g, "\n")))).map((b) => b.toString(16).padStart(2, "0")).join("");
       MINTS_BY = { crew: "rtc", rtc: "superintendent", superintendent: "superintendent" };
-      mintString = (p, role, start, by) => `ballast/mint/1
+      mintString = (p, role, start, by, root2) => `ballast/mint/2
 ${role}
 ${start}
 ${p.pin}
 ${p.pub}
 ${p.sig}
-${by.sig}`;
+${by.sig}
+${root2.sig}
+${root2.pub}`;
       mintProfile = async (minter, profile, role, start = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)) => {
         if (!ROLES.includes(role)) throw new Error(`bad role ${role}`);
         if (minter.role !== MINTS_BY[role]) throw new Error(`a ${minter.role} cannot mint ${role}`);
-        const by = { name: minter.name, pin: minter.pin, sig: minter.sig, role: minter.role };
-        const signature = await signBytes(minter.sign, utf8(mintString(profile, role, start, by)));
-        return { ...publicProfile(profile), role, minted: { role, start, by, signature } };
+        const by = { name: minter.name, pin: minter.pin, sig: minter.sig, pub: minter.pub, role: minter.role };
+        const root2 = minter.role === "superintendent" ? { name: minter.name, sig: minter.sig, pub: minter.pub } : minter.minted?.root;
+        if (!root2) throw new Error("the minter has no superintendent above them");
+        const via = minter.role === "superintendent" ? null : minter.minted;
+        const signature = await signBytes(minter.sign, utf8(mintString(profile, role, start, by, root2)));
+        return { ...publicProfile(profile), role, minted: { role, start, by, root: root2, via, signature } };
       };
       checkMint = async (p) => {
         const m = p.minted;
         if (!m || m.role !== p.role || !ROLES.includes(p.role)) return false;
         if (m.by.role !== MINTS_BY[p.role]) return false;
         if (p.role === "superintendent" && m.by.sig !== p.sig) return false;
-        return verifyBytes(m.by.sig, m.signature, utf8(mintString(p, p.role, m.start, m.by)));
+        if (!m.root?.sig || !m.root?.pub) return false;
+        if (!await verifyBytes(m.by.sig, m.signature, utf8(mintString(p, p.role, m.start, m.by, m.root)))) return false;
+        if (p.role === "superintendent") return m.root.sig === p.sig;
+        if (m.by.role === "superintendent") return m.root.sig === m.by.sig && !m.via;
+        return !!m.via && m.via.role === "rtc" && m.via.root?.sig === m.root.sig && checkMint({ ...m.by, pin: m.by.pin, minted: m.via });
       };
       registration = (p) => ({ ...publicProfile(p), role: "none" });
     }
@@ -439,8 +448,8 @@ ${by.sig}`;
       role: "superintendent",
       name: "Marguerite Boudreau",
       pin: "900011",
-      pub: "BLqqIDE35xx-AXmeh9aG-c_lOBnSWOmI4bQZJx1EWJ5wpHgItKurvf7U8MrROZvx_bRRchkSNQi3jzz-zVQ4GvM",
-      sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
+      pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+      sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
       photo: "",
       minted: {
         role: "superintendent",
@@ -448,10 +457,17 @@ ${by.sig}`;
         by: {
           name: "Marguerite Boudreau",
           pin: "900011",
-          sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
+          sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+          pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
           role: "superintendent"
         },
-        signature: "w2jBSsIiOSqA1xEGjVebrFmMUym3UcQ5HMUOJP3w1m4eDfVZHYhklYgcmo1jZNGO3IzkssO5jCY5kqYV4BhEFw"
+        root: {
+          name: "Marguerite Boudreau",
+          sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+          pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+        },
+        via: null,
+        signature: "Y8Qh89wBejgY_8S5nJs__oqT5uR_uLGw--f4zFF604VAzbHOP9EA9nT4_OZFjtpYyEHiVJNvnnkJnm_opUUkRw"
       },
       keys: {
         priv: {
@@ -460,10 +476,10 @@ ${by.sig}`;
           ],
           ext: true,
           kty: "EC",
-          x: "uqogMTfnHH4BeZ6H1ob5z-U4GdJY6YjhtBknHURYnnA",
-          y: "pHgItKurvf7U8MrROZvx_bRRchkSNQi3jzz-zVQ4GvM",
+          x: "daoMGqetqcJpv9jx4MfJgnJ6yuTvBh22VHDkcVjP8N8",
+          y: "9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
           crv: "P-256",
-          d: "oJ4YxxWdCWCCcjpEZqH8nuB4TcOz3qmkJotfClH8SJQ"
+          d: "7kspuFJipUPS4ME3UOKHl9Ye4e479stO0a083oCLBFw"
         },
         sign: {
           key_ops: [
@@ -471,10 +487,10 @@ ${by.sig}`;
           ],
           ext: true,
           kty: "EC",
-          x: "ZewSsUasww2TYi330sgPPai4JQemaxmD__uHC5kthlI",
-          y: "w6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
+          x: "NlQ9QkgLhs6uFewC1VAdeWNP9UyeKkZocn1dspcYqJ0",
+          y: "T_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
           crv: "P-256",
-          d: "yk1dzzcVyg8CneP-Z2_f07Zyt9onA0SlgfANXQn9V0Y"
+          d: "mLtgJUX9oO-KVSaBj8pbv1N7MLAsoyTT8fUCDqaZUD4"
         }
       }
     },
@@ -483,8 +499,8 @@ ${by.sig}`;
         role: "rtc",
         name: "Denise Okafor",
         pin: "710021",
-        pub: "BBksW8HsH8WkXwKcXyX2kqtz3-76r4bQgZI-P6erp1s4JSwNkF_PrwQGdP0ylhi8WRXyZFqdInkccicE1rfTfu0",
-        sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
+        pub: "BHg3AIuo0-YITaEv8Q5zdsnRMkUlQQtnnr7HKdaQ_Oo-z7Rr-O_7iyt34RFStwsdwCnvrlhxGOwzpwVWzEoMxUw",
+        sig: "BBhc76tmUFQ9ug538sNXFDQGSH_5DicSQV6Z5ZdDAh55_lRl_Kgx-ba8g8538qAisAL0Wbu4D8Wgk9tSwZJEPrU",
         photo: "",
         minted: {
           role: "rtc",
@@ -492,10 +508,17 @@ ${by.sig}`;
           by: {
             name: "Marguerite Boudreau",
             pin: "900011",
-            sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
             role: "superintendent"
           },
-          signature: "2JtaA27zm5hz8xT6eo4f59cPqxIEcuCN11Do3BSMFThJknRsd1Ble9mFd6D4SLuP2OPAYvJQE2RUeoC1XviQ6w"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: null,
+          signature: "qOj-5CgahSSYMCiTwjoEw69n45faDispodFUonPh70V0_IRvl8-YrT1yHp0pquNCs7g98rJcLo-RruuRsMmVHg"
         },
         keys: {
           priv: {
@@ -504,10 +527,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "GSxbwewfxaRfApxfJfaSq3Pf7vqvhtCBkj4_p6unWzg",
-            y: "JSwNkF_PrwQGdP0ylhi8WRXyZFqdInkccicE1rfTfu0",
+            x: "eDcAi6jT5ghNoS_xDnN2ydEyRSVBC2eevscp1pD86j4",
+            y: "z7Rr-O_7iyt34RFStwsdwCnvrlhxGOwzpwVWzEoMxUw",
             crv: "P-256",
-            d: "24qqqAjzgYy2fpGkf52_4Itv-ntCGvrRnX-3l4RsSBE"
+            d: "zPJj560OBLRUyl5MnEWpwyxz0HNFnUgRUXpKADcZmqU"
           },
           sign: {
             key_ops: [
@@ -515,10 +538,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "4k8Jo7CJinL_x6Oibw7osPFXLx17ON_K8UWd0FsVZpc",
-            y: "Nar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
+            x: "GFzvq2ZQVD26Dnfyw1cUNAZIf_kOJxJBXpnll0MCHnk",
+            y: "_lRl_Kgx-ba8g8538qAisAL0Wbu4D8Wgk9tSwZJEPrU",
             crv: "P-256",
-            d: "RVCFpk1DLDqCYV0T4ou0kLWNnbst5AnlPMBE2a_9LZ4"
+            d: "bB8IEYv7W-WO8GpnJ2IyTtp6nfl8j2G7M0sfocG_rxc"
           }
         },
         style: "fair"
@@ -527,8 +550,8 @@ ${by.sig}`;
         role: "rtc",
         name: "Ray Kowalczyk",
         pin: "710034",
-        pub: "BBQh1ubKDHgcNC6WYLHPKR5G64lx8bkAhiLFayZxnfNsUTJSdHaclJy97Ca1nSK5W04vxkX8TZO9y3HgMu8VY2U",
-        sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
+        pub: "BHQITc7TEOGk0NWa1SY3HomeqeZqNPhRWzt6yxUU1IqxH3zp_LZFHW1rA9Q7hKfXwUUjs4uFtDaV11p6C_xFuMY",
+        sig: "BJt06vFrkvUtcBQKdxbhr5jTqgdZIvFb3X_0kLqrAkH1TX0UmRiHEVYLfwzImCNSP-DZxs0QN50-Clhj7YF6nb0",
         photo: "",
         minted: {
           role: "rtc",
@@ -536,10 +559,17 @@ ${by.sig}`;
           by: {
             name: "Marguerite Boudreau",
             pin: "900011",
-            sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
             role: "superintendent"
           },
-          signature: "IIW-PHUhc3meRshRoX6nvG3QxFG8YE36DVsE6HIaotLjneOo-AHBKDRj7YGU_MVuI1Qvz77SDsMQyHokn-oc-w"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: null,
+          signature: "Rapz5UXA01v904yWmkVpPnIQSn06Rqv_sxk4gZDaJCRNuVKR9ue49ogGBz2vRGpAcQdh4NNI_3gq_V7ixQhm5A"
         },
         keys: {
           priv: {
@@ -548,10 +578,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "FCHW5soMeBw0LpZgsc8pHkbriXHxuQCGIsVrJnGd82w",
-            y: "UTJSdHaclJy97Ca1nSK5W04vxkX8TZO9y3HgMu8VY2U",
+            x: "dAhNztMQ4aTQ1ZrVJjceiZ6p5mo0-FFbO3rLFRTUirE",
+            y: "H3zp_LZFHW1rA9Q7hKfXwUUjs4uFtDaV11p6C_xFuMY",
             crv: "P-256",
-            d: "azKYTuv3kvXMqUL4gyPq67vHJ6oCHxEJt9U7MfcL41o"
+            d: "GptPkzeYs6UQwG3J3vVy53fM_mwFDyBEn9tgKpCqjB0"
           },
           sign: {
             key_ops: [
@@ -559,10 +589,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "sI6zMCBriGdOy50RHt-IdpryczuAe0BxuGd1x6AuR6E",
-            y: "MB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
+            x: "m3Tq8WuS9S1wFAp3FuGvmNOqB1ki8Vvdf_SQuqsCQfU",
+            y: "TX0UmRiHEVYLfwzImCNSP-DZxs0QN50-Clhj7YF6nb0",
             crv: "P-256",
-            d: "69T55tFDagHv5VK4Jsoaik0Am4q8Z7kXJb21eivK-1c"
+            d: "6IQdsM_QIkcVXHsPgLZiTKcEv5-_2U-GCu8uN89FJpY"
           }
         },
         style: "nose"
@@ -571,8 +601,8 @@ ${by.sig}`;
         role: "rtc",
         name: "Tom Ferland",
         pin: "710047",
-        pub: "BElmqBjQUQaMUErnDMkXrnvZz_vXebUURf9qXmlhINwPjkPcqsQf0yaABsWSKULIA_LC09GWNJQYBpn36yO17t0",
-        sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
+        pub: "BGR001qpUNN6v_w-4kXi32I4fEYHTZqwpEQr7KZLvU7d9VMK7ifaOmcpmyJEO9i7h9QagfiPzwhJjJd8mQJOGII",
+        sig: "BEmpU20BcC0zt6iU2KwmdxAlixWKNtlFKbzFlgLxtdbJoJIAKQhVObig-BT0zlBNQ0REHIp7eiHouZBS9W8q5jE",
         photo: "",
         minted: {
           role: "rtc",
@@ -580,10 +610,17 @@ ${by.sig}`;
           by: {
             name: "Marguerite Boudreau",
             pin: "900011",
-            sig: "BGXsErFGrMMNk2It99LIDz2ouCUHpmsZg__7hwuZLYZSw6UjgBBsgB5bQQsN1cDjEa4gKOkEILX-P82v_zKdUSY",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
             role: "superintendent"
           },
-          signature: "akZQzlJQxzRT6HasnpjpFvxTl8MBDxL4rUI7iiZbrEGr1TcnoEyt5UCTAiWS71QNCxyYvcToIFjfEcDSd6RN8g"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: null,
+          signature: "Gnv2OTZ5lpGkSctwEnVJn2g9JMpQZawu5zSXxwpARiC7ztiW1DbK43AAADHQ21_L6Tff03LgU-6_5p5GKnGT6Q"
         },
         keys: {
           priv: {
@@ -592,10 +629,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "SWaoGNBRBoxQSucMyReue9nP-9d5tRRF_2peaWEg3A8",
-            y: "jkPcqsQf0yaABsWSKULIA_LC09GWNJQYBpn36yO17t0",
+            x: "ZHTTWqlQ03q__D7iReLfYjh8RgdNmrCkRCvspku9Tt0",
+            y: "9VMK7ifaOmcpmyJEO9i7h9QagfiPzwhJjJd8mQJOGII",
             crv: "P-256",
-            d: "zUWd7Ct9cBOos-fdkJ6S4FieP4Z6_2UljTQIXg0mevU"
+            d: "j3PPjbYGBt6gaiD8leakzahoBIpgxya5KlUSiIJiIJE"
           },
           sign: {
             key_ops: [
@@ -603,10 +640,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "ot5AmKNivEc5En1zEnwlTtE9KlsMQMWkcxzFABo0Fck",
-            y: "tjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
+            x: "SalTbQFwLTO3qJTYrCZ3ECWLFYo22UUpvMWWAvG11sk",
+            y: "oJIAKQhVObig-BT0zlBNQ0REHIp7eiHouZBS9W8q5jE",
             crv: "P-256",
-            d: "h1IaiZ2OSwmDC0SZuQqqYYfCJbDLz_m1o61-8SpPMU0"
+            d: "n1SUFWGzeNrYN2z-odsp2pA9T88kc7L2UdzAbpu1kNE"
           }
         },
         style: "lazy"
@@ -617,8 +654,8 @@ ${by.sig}`;
         role: "crew",
         name: "Alice Marchand",
         pin: "123456",
-        pub: "BEtehBQ045zlKQSObkzdb8qLc835vKb-jc3JlLmtDlitcki50NTXDV4SF-EgJC5tgVRPYOFT-RnMFppSjmuy04o",
-        sig: "BJTGz46epVlINpQdWfl15TGeLTQXO6OLkV6k7AOEzdxxhOgmjSIldSIg9yTGeDVLbA4Ns1p5qva6c26rYvfCC0Y",
+        pub: "BNGd5dAU8TpzwanSXdjRnPAGGiV9CJYftaOx9KKLjDeYyKC-vR-Q6Wz3Vt_c8YJhqZXP885xxAnHOz3IFJabsjw",
+        sig: "BNUREjq0Ics2-wQZhrpboxIPPUwm1UzudQgmAyFu9aYz3kRBxJCwkReStfXRAIai4iqNq9COEQbQRPU1SnBojUM",
         photo: "",
         minted: {
           role: "crew",
@@ -626,10 +663,34 @@ ${by.sig}`;
           by: {
             name: "Denise Okafor",
             pin: "710021",
-            sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
+            sig: "BBhc76tmUFQ9ug538sNXFDQGSH_5DicSQV6Z5ZdDAh55_lRl_Kgx-ba8g8538qAisAL0Wbu4D8Wgk9tSwZJEPrU",
+            pub: "BHg3AIuo0-YITaEv8Q5zdsnRMkUlQQtnnr7HKdaQ_Oo-z7Rr-O_7iyt34RFStwsdwCnvrlhxGOwzpwVWzEoMxUw",
             role: "rtc"
           },
-          signature: "8rJiKjgMbd7bNaaFEnF5R6N4_dbeSly_q8BsbJ4YQytva155Ll1GdkDWKAUuB_al-fd4CImzXBuZ8RG2CZTSBg"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2024-09-03",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "qOj-5CgahSSYMCiTwjoEw69n45faDispodFUonPh70V0_IRvl8-YrT1yHp0pquNCs7g98rJcLo-RruuRsMmVHg"
+          },
+          signature: "-bpZ_IpPs9BAuB7fNv_x1_XvZai_QLCFhAjQGe8-ZFOjiMdjIkQgwLYsHYWwDQid9r8CEZVY_zCpvJ8WW3ykbQ"
         },
         keys: {
           priv: {
@@ -638,10 +699,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "S16EFDTjnOUpBI5uTN1vyotzzfm8pv6NzcmUua0OWK0",
-            y: "cki50NTXDV4SF-EgJC5tgVRPYOFT-RnMFppSjmuy04o",
+            x: "0Z3l0BTxOnPBqdJd2NGc8AYaJX0Ilh-1o7H0oouMN5g",
+            y: "yKC-vR-Q6Wz3Vt_c8YJhqZXP885xxAnHOz3IFJabsjw",
             crv: "P-256",
-            d: "6EWw65lEPSHGvvz1QszzS4Q2G1PQ3XDAlGEqa4GwfKM"
+            d: "4shT8MlFJ7IKrssz3MtG_Kt3OIP5wUGRuQSr7X_QAwY"
           },
           sign: {
             key_ops: [
@@ -649,10 +710,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "lMbPjp6lWUg2lB1Z-XXlMZ4tNBc7o4uRXqTsA4TN3HE",
-            y: "hOgmjSIldSIg9yTGeDVLbA4Ns1p5qva6c26rYvfCC0Y",
+            x: "1RESOrQhyzb7BBmGulujEg89TCbVTO51CCYDIW71pjM",
+            y: "3kRBxJCwkReStfXRAIai4iqNq9COEQbQRPU1SnBojUM",
             crv: "P-256",
-            d: "LjLF2jlGg86R7E_an75zCVtzKQJlm5sHAGUW4PZR5t8"
+            d: "BxQ7TV6ly1Yr5_cdUkGHUeYZjzSfnwOA51JVnDHSODE"
           }
         },
         rtc: 0,
@@ -664,8 +725,8 @@ ${by.sig}`;
         role: "crew",
         name: "Ben Okoye",
         pin: "123457",
-        pub: "BCQigN6ybp2cESg5sOKNxeYwdzXaxskpRbTVOcKfl-teFdO5VVBIoTwxobnpcvoVX711fHk8Zqg9gtj6c93UJkM",
-        sig: "BHQsQLw-xsSpE0odptL7ofoucOPDbLd-Rp825uzOZMgT3-SEpY5j6p2gccFFPvbkJDaSUzI5g_dhGz_4xZofNPw",
+        pub: "BMiWWeIWisqr8bPrCfLg6kEE8pPPxfAhalJExz5xoirqq_2KEBIy4GQOgLjXwsp08W6JfzX_cQwQsb6vbs-mZKA",
+        sig: "BCFFf4RElSqLsG93UjJcKbvjg-nT3ScHXwtEmQUMYImif9uj4pw8mwwxEeP_R-gMm_s8n0_Hjy3WTp-dUUOdPGc",
         photo: "",
         minted: {
           role: "crew",
@@ -673,10 +734,34 @@ ${by.sig}`;
           by: {
             name: "Denise Okafor",
             pin: "710021",
-            sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
+            sig: "BBhc76tmUFQ9ug538sNXFDQGSH_5DicSQV6Z5ZdDAh55_lRl_Kgx-ba8g8538qAisAL0Wbu4D8Wgk9tSwZJEPrU",
+            pub: "BHg3AIuo0-YITaEv8Q5zdsnRMkUlQQtnnr7HKdaQ_Oo-z7Rr-O_7iyt34RFStwsdwCnvrlhxGOwzpwVWzEoMxUw",
             role: "rtc"
           },
-          signature: "LkKAxVtjJEmJxhDOKfDjnYhB-0OH_v63JKKIOc-njOs_Y_P8gnWV4FcVzafiiM1URR8l7nJ-GlfHWKL-gtn-eQ"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2024-09-03",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "qOj-5CgahSSYMCiTwjoEw69n45faDispodFUonPh70V0_IRvl8-YrT1yHp0pquNCs7g98rJcLo-RruuRsMmVHg"
+          },
+          signature: "bbeb-YEl366MbvfThRmhifDaOSxdSH8G2Zd4VclyUMR-EZTyod-sns1s7-7uJaMN6VpLLJ47YovsbvxiG5FZxg"
         },
         keys: {
           priv: {
@@ -685,10 +770,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "JCKA3rJunZwRKDmw4o3F5jB3NdrGySlFtNU5wp-X614",
-            y: "FdO5VVBIoTwxobnpcvoVX711fHk8Zqg9gtj6c93UJkM",
+            x: "yJZZ4haKyqvxs-sJ8uDqQQTyk8_F8CFqUkTHPnGiKuo",
+            y: "q_2KEBIy4GQOgLjXwsp08W6JfzX_cQwQsb6vbs-mZKA",
             crv: "P-256",
-            d: "2TzZ_2blOZbvQOsNVTMH-BRKevuam8fKwOwXz6svW3o"
+            d: "kNzBIrfTwhn6C57-mlziCVlOi6wGVgNItoufeN0STN0"
           },
           sign: {
             key_ops: [
@@ -696,10 +781,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "dCxAvD7GxKkTSh2m0vuh-i5w48Nst35Gnzbm7M5kyBM",
-            y: "3-SEpY5j6p2gccFFPvbkJDaSUzI5g_dhGz_4xZofNPw",
+            x: "IUV_hESVKouwb3dSMlwpu-OD6dPdJwdfC0SZBQxgiaI",
+            y: "f9uj4pw8mwwxEeP_R-gMm_s8n0_Hjy3WTp-dUUOdPGc",
             crv: "P-256",
-            d: "7TCudfxQ6CtrM8PLoblJwzcLsSj1sLcnirhDoyoHFVo"
+            d: "xbQ0W1DuxIKGPviLVnUhoryZZe7-kVDuOAf38i7l6YQ"
           }
         },
         rtc: 0,
@@ -711,8 +796,8 @@ ${by.sig}`;
         role: "crew",
         name: "Chloe Tremblay",
         pin: "123458",
-        pub: "BB1Axqe62vR7EhNEHTN7kSm0QsFs0MuTwUvcX6yX8PzvkC4WfrSlUuhE1r9jKs2uTcclGkVslcOWjtx-yAlbG5o",
-        sig: "BO-Ba-CXBRTC83P5yjKdrGV2u4mDKI-thEh_tT_SzinHewkL1ybp4E9N8pgESF7ASlvJm2NEmYE4AdcOKwanR_w",
+        pub: "BBkqtkR3kRWYlg8ztywswQkj93mYgp5ItdjbriMDZhUy-ZpwWUwOKRkGEIoG8YF8TIL-q_hJiv2bJ2-kG_NiPt0",
+        sig: "BH26-DrMHDdWj2pKHsV8vwBDQlhRsAQfW3zi5eWqaeoxg-9TVlp42ePAtCC1X8XKHmxiS3SRZMoOvHSZmU3yGnc",
         photo: "",
         minted: {
           role: "crew",
@@ -720,10 +805,34 @@ ${by.sig}`;
           by: {
             name: "Denise Okafor",
             pin: "710021",
-            sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
+            sig: "BBhc76tmUFQ9ug538sNXFDQGSH_5DicSQV6Z5ZdDAh55_lRl_Kgx-ba8g8538qAisAL0Wbu4D8Wgk9tSwZJEPrU",
+            pub: "BHg3AIuo0-YITaEv8Q5zdsnRMkUlQQtnnr7HKdaQ_Oo-z7Rr-O_7iyt34RFStwsdwCnvrlhxGOwzpwVWzEoMxUw",
             role: "rtc"
           },
-          signature: "s6Zypy3zL7rBF4Pg-uOANghzdo_FnL5bz8tLsq9X9tQvyjOrg4FBoHR8a3hOT7aLhK0o4EfNleYR9zpt0b1pzA"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2024-09-03",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "qOj-5CgahSSYMCiTwjoEw69n45faDispodFUonPh70V0_IRvl8-YrT1yHp0pquNCs7g98rJcLo-RruuRsMmVHg"
+          },
+          signature: "JYE5vWM2O6QE40OuDttQLXX_u8Sg2Emv1h_FAHyX_3dA-BKDJsJtGQKjiIhENlLixC6R0aOdUM4aIQ-ak5ytmw"
         },
         keys: {
           priv: {
@@ -732,10 +841,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "HUDGp7ra9HsSE0QdM3uRKbRCwWzQy5PBS9xfrJfw_O8",
-            y: "kC4WfrSlUuhE1r9jKs2uTcclGkVslcOWjtx-yAlbG5o",
+            x: "GSq2RHeRFZiWDzO3LCzBCSP3eZiCnki12NuuIwNmFTI",
+            y: "-ZpwWUwOKRkGEIoG8YF8TIL-q_hJiv2bJ2-kG_NiPt0",
             crv: "P-256",
-            d: "6QqMdmiFLZTK1kUuMW3pJx5neEHv8-FLJ1qRWCvKwho"
+            d: "U6NytMfJpHoIfFQG-t4OFWXHvDcNwLyHV1BUn0MO-9A"
           },
           sign: {
             key_ops: [
@@ -743,10 +852,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "74Fr4JcFFMLzc_nKMp2sZXa7iYMoj62ESH-1P9LOKcc",
-            y: "ewkL1ybp4E9N8pgESF7ASlvJm2NEmYE4AdcOKwanR_w",
+            x: "fbr4OswcN1aPakoexXy_AENCWFGwBB9bfOLl5app6jE",
+            y: "g-9TVlp42ePAtCC1X8XKHmxiS3SRZMoOvHSZmU3yGnc",
             crv: "P-256",
-            d: "9Xdbc3puu_2-XpZuruFZ3IHDijeFY2SGB8X9IiSapxE"
+            d: "O16Zh6mvk954pblHhxh9njG_6Jo3Gf5FBzpBqL6e27A"
           }
         },
         rtc: 0,
@@ -758,8 +867,8 @@ ${by.sig}`;
         role: "crew",
         name: "Darius Hall",
         pin: "123459",
-        pub: "BEC6VTMJzQU8ZPgt-EYu3Id8ZiNOn0tlaNovrZsuoMRqAkNZ2C3UXn6gC2DwkoWcojyxWqLrLPSptwWfzokFbwY",
-        sig: "BOFTjLMHZlkI4xhRKXQ5ws2U9O45TAUb1LcNhKjkx7xV9tIYbom1BBz_eLMV1_-G3HA9_EQqVpni0dK7F5bk0lw",
+        pub: "BNJN_KHWz3L7MRchh0ftBUk7m3QnwNAQddiQHZDRSHUXcgZ7_3w4lfgO4BjWglhvTT6dGy21uz1c7Vt93cvLNVY",
+        sig: "BA0LL4tuNzX6Hm4o4_6vLT3cZ9H5eVZSfLHK46QBem0yIISU_QTutm0npzXQt4NSv0QPdZh3nuAau0dkXrBqAMs",
         photo: "",
         minted: {
           role: "crew",
@@ -767,10 +876,34 @@ ${by.sig}`;
           by: {
             name: "Denise Okafor",
             pin: "710021",
-            sig: "BOJPCaOwiYpy_8ejom8O6LDxVy8dezjfyvFFndBbFWaXNar_JtMbHSUgnPCPwAJz8nNhCbzNiGP8Zind3BFvGP4",
+            sig: "BBhc76tmUFQ9ug538sNXFDQGSH_5DicSQV6Z5ZdDAh55_lRl_Kgx-ba8g8538qAisAL0Wbu4D8Wgk9tSwZJEPrU",
+            pub: "BHg3AIuo0-YITaEv8Q5zdsnRMkUlQQtnnr7HKdaQ_Oo-z7Rr-O_7iyt34RFStwsdwCnvrlhxGOwzpwVWzEoMxUw",
             role: "rtc"
           },
-          signature: "1QLo_GHAMv1IDvcHMy1zQNf20GYA8M9NtwVhRlDIOLLt9ENrYgKXTSmvTyGZy8OV6U32Z8owopGggs4nQ2TBeA"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2024-09-03",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "qOj-5CgahSSYMCiTwjoEw69n45faDispodFUonPh70V0_IRvl8-YrT1yHp0pquNCs7g98rJcLo-RruuRsMmVHg"
+          },
+          signature: "2zeJwr2Ehpb30JQLlsc1CDHTfYgwStmOb8SxO1GK0jVDDesaCQVVzXkLPjHLYUyU5XBiA6eHKpFQbfqU2t8KNw"
         },
         keys: {
           priv: {
@@ -779,10 +912,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "QLpVMwnNBTxk-C34Ri7ch3xmI06fS2Vo2i-tmy6gxGo",
-            y: "AkNZ2C3UXn6gC2DwkoWcojyxWqLrLPSptwWfzokFbwY",
+            x: "0k38odbPcvsxFyGHR-0FSTubdCfA0BB12JAdkNFIdRc",
+            y: "cgZ7_3w4lfgO4BjWglhvTT6dGy21uz1c7Vt93cvLNVY",
             crv: "P-256",
-            d: "O1wjRw9vf38AN18MMKEyuLGwnW28Wr6NUxAxPiwSo9o"
+            d: "tWo_cmRWfBK4J2Y40dZIwqro4R4eC0zmV1ss4P-bfxQ"
           },
           sign: {
             key_ops: [
@@ -790,10 +923,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "4VOMswdmWQjjGFEpdDnCzZT07jlMBRvUtw2EqOTHvFU",
-            y: "9tIYbom1BBz_eLMV1_-G3HA9_EQqVpni0dK7F5bk0lw",
+            x: "DQsvi243Nfoebijj_q8tPdxn0fl5VlJ8scrjpAF6bTI",
+            y: "IISU_QTutm0npzXQt4NSv0QPdZh3nuAau0dkXrBqAMs",
             crv: "P-256",
-            d: "-9nEKoZ2DG0-SD2IkApPRalSLe1qs5skl1Sin2jN42I"
+            d: "V9rFqtpDiZV4Z82vtQX1JJ_EeXPbWOd0L0uIggLnmKw"
           }
         },
         rtc: 0,
@@ -805,8 +938,8 @@ ${by.sig}`;
         role: "crew",
         name: "Emma Sinclair",
         pin: "123460",
-        pub: "BN93SNaXlVg9WKVzgjHYfJ4d3n0azQBUt2CLqBZv9-6IDjfmpvz1uhEN6graBM6aSYsf82KRUyHsHSjgWDqEzFw",
-        sig: "BFbBa4AAIqX_szYLGwEqkYP1jjPpEzYHbZdn8rnx9CPhqQwOeb7FHQXq0l1KlEUR7hIR1lCumg707RdfjVQjQd0",
+        pub: "BJ10NqoZwSClcjus35j9NRfK1t2pG2SI9Nqn9EviSQpNMYW21nuB8WrElGC4zx-hz6rSRkPGad7loGjH6Xb97Xg",
+        sig: "BBlUn98beYRxNZL8MkkAZUpBk3eNNnGFIrEL1XFTUEzmvUXEeoMYv9cOYPjzziYG_5PCvYMDi8xOEemBjaRbeVk",
         photo: "",
         minted: {
           role: "crew",
@@ -814,10 +947,34 @@ ${by.sig}`;
           by: {
             name: "Ray Kowalczyk",
             pin: "710034",
-            sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
+            sig: "BJt06vFrkvUtcBQKdxbhr5jTqgdZIvFb3X_0kLqrAkH1TX0UmRiHEVYLfwzImCNSP-DZxs0QN50-Clhj7YF6nb0",
+            pub: "BHQITc7TEOGk0NWa1SY3HomeqeZqNPhRWzt6yxUU1IqxH3zp_LZFHW1rA9Q7hKfXwUUjs4uFtDaV11p6C_xFuMY",
             role: "rtc"
           },
-          signature: "9icx1lStRvUwQXVCqGrQIHPoO8U8vF5J4XVFYqgz95w3DCcUbZVqlDxs1YzHpej-ivEJxA4RY0vJ68CtRz6tHw"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2023-01-16",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "Rapz5UXA01v904yWmkVpPnIQSn06Rqv_sxk4gZDaJCRNuVKR9ue49ogGBz2vRGpAcQdh4NNI_3gq_V7ixQhm5A"
+          },
+          signature: "RutOATCUEYzN6O5hD8i3wSyn18Q_qM5Y_craGVYLprUWJg2Wkug8UObPF9JSfJ5xsgrzo940VosPm9TF-OVsMQ"
         },
         keys: {
           priv: {
@@ -826,10 +983,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "33dI1peVWD1YpXOCMdh8nh3efRrNAFS3YIuoFm_37og",
-            y: "Djfmpvz1uhEN6graBM6aSYsf82KRUyHsHSjgWDqEzFw",
+            x: "nXQ2qhnBIKVyO6zfmP01F8rW3akbZIj02qf0S-JJCk0",
+            y: "MYW21nuB8WrElGC4zx-hz6rSRkPGad7loGjH6Xb97Xg",
             crv: "P-256",
-            d: "ilCKj0hVEQ9gRum_7BDn7u5uzdVmM4ksEQCU5FnZMus"
+            d: "7xEf5VkZHl42pOrquxPlpRt_8iLU6z97dn7_j5PbsgM"
           },
           sign: {
             key_ops: [
@@ -837,10 +994,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "VsFrgAAipf-zNgsbASqRg_WOM-kTNgdtl2fyufH0I-E",
-            y: "qQwOeb7FHQXq0l1KlEUR7hIR1lCumg707RdfjVQjQd0",
+            x: "GVSf3xt5hHE1kvwySQBlSkGTd402cYUisQvVcVNQTOY",
+            y: "vUXEeoMYv9cOYPjzziYG_5PCvYMDi8xOEemBjaRbeVk",
             crv: "P-256",
-            d: "kEA7TsZiiTdv4DYlI8taxFEjHV-rZcaqier9sipYooE"
+            d: "JZgCDyutbfrGyVf8AJ8ITue5hSyCYCHCeYINCW3dbXE"
           }
         },
         rtc: 1,
@@ -852,8 +1009,8 @@ ${by.sig}`;
         role: "crew",
         name: "Gordon Whitfield",
         pin: "123461",
-        pub: "BCpNZrls84757Nqw_EEli4VYY940czDtlSJM9HOuWjEax8lhp-8bS-BZ134BWzhYeQxB9cY92y9sajZHakiYj_w",
-        sig: "BGiHCs1oIT6foxhTkzgbRYGmZUpbBxCQrs2SIKV6A6rUxEu_GM1eVEuWTod6pYjntoJJ_fgvla3C2PUQJU6IgyU",
+        pub: "BLohd7387tubnk_q16MudSOJNagFCQEk5Di1cN463Y8Epm-1NREnKo5h9QDa8DkqdqO3lqI5ul51u_lZ_ruFqcw",
+        sig: "BKX_9TSEosyUWkEPvGjL3A81W25XdxnBkAZ7uT-94jLeGFrHQ7p_TSB4l0gfSUSGyQIfR2gMBTlhy90XuUdHXnU",
         photo: "",
         minted: {
           role: "crew",
@@ -861,10 +1018,34 @@ ${by.sig}`;
           by: {
             name: "Ray Kowalczyk",
             pin: "710034",
-            sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
+            sig: "BJt06vFrkvUtcBQKdxbhr5jTqgdZIvFb3X_0kLqrAkH1TX0UmRiHEVYLfwzImCNSP-DZxs0QN50-Clhj7YF6nb0",
+            pub: "BHQITc7TEOGk0NWa1SY3HomeqeZqNPhRWzt6yxUU1IqxH3zp_LZFHW1rA9Q7hKfXwUUjs4uFtDaV11p6C_xFuMY",
             role: "rtc"
           },
-          signature: "I5M-0XAVIsJGHg0RON9XKurEqwzFxwb3wtAP6dyxlcGQ5SXWvMJcryWMWaNbiBTyfrxdHgzdy1GtEDUFzCxk4Q"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2023-01-16",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "Rapz5UXA01v904yWmkVpPnIQSn06Rqv_sxk4gZDaJCRNuVKR9ue49ogGBz2vRGpAcQdh4NNI_3gq_V7ixQhm5A"
+          },
+          signature: "nbXWtNV6x6Kzrdpj5XEYONk-gtOb1p7bw1-vCx7fVa90xFWQFQ8DxBWqfGABSX2kYhpsdrlgfhCk2IAHCtoCIQ"
         },
         keys: {
           priv: {
@@ -873,10 +1054,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "Kk1muWzzjvns2rD8QSWLhVhj3jRzMO2VIkz0c65aMRo",
-            y: "x8lhp-8bS-BZ134BWzhYeQxB9cY92y9sajZHakiYj_w",
+            x: "uiF3vfzu25ueT-rXoy51I4k1qAUJASTkOLVw3jrdjwQ",
+            y: "pm-1NREnKo5h9QDa8DkqdqO3lqI5ul51u_lZ_ruFqcw",
             crv: "P-256",
-            d: "No6mH91iyurvCmSa_R7MkaDfqkLIzAh8a-egt4260cM"
+            d: "hwAGUh09N6tIITa0NLdlnRn6WFxK9cW_Lq_IaJFrVuQ"
           },
           sign: {
             key_ops: [
@@ -884,10 +1065,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "aIcKzWghPp-jGFOTOBtFgaZlSlsHEJCuzZIgpXoDqtQ",
-            y: "xEu_GM1eVEuWTod6pYjntoJJ_fgvla3C2PUQJU6IgyU",
+            x: "pf_1NISizJRaQQ-8aMvcDzVbbld3GcGQBnu5P73iMt4",
+            y: "GFrHQ7p_TSB4l0gfSUSGyQIfR2gMBTlhy90XuUdHXnU",
             crv: "P-256",
-            d: "wsOU1q__quyFIXsw_W9_IDFBQVbMgcQRFCKOTIrxedA"
+            d: "vVCFtBRlIODHBEc9MfyyP81ZC_k4PCiQGzSdxoc7dWg"
           }
         },
         rtc: 1,
@@ -899,8 +1080,8 @@ ${by.sig}`;
         role: "crew",
         name: "Grace Whitecloud",
         pin: "123462",
-        pub: "BFLtbU2yhZYQV56oWV3om_z0b241ulsWV3CExWrsPl8GntZvDufAkblI-6Wu-GtpSY7Vh-5x9mzx1P7DdGatI7I",
-        sig: "BLhI1Bz_9nxUmm_npNBayGrrXbSkehvT7Za1ijKMADdpfKZPvJ-8nzJq-HKYH32WCQ8VFcKx_HiYa1HMRPKS08c",
+        pub: "BMOrADXVvjkrJTZqCgTgrl9uOOYCrwRc4pjOrRBfHjZLiCwtzb_30nEKdRDs5jYpKJMriOuZG1HLK_Z0hJwbaT4",
+        sig: "BKNQw299YCLK8KBo1QFt2l7x7kFzmVXNncOecRu99H54BXXbWkwQrHE5qNniK0OtzblqWRDnx_tsGkRIiDrbc88",
         photo: "",
         minted: {
           role: "crew",
@@ -908,10 +1089,34 @@ ${by.sig}`;
           by: {
             name: "Ray Kowalczyk",
             pin: "710034",
-            sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
+            sig: "BJt06vFrkvUtcBQKdxbhr5jTqgdZIvFb3X_0kLqrAkH1TX0UmRiHEVYLfwzImCNSP-DZxs0QN50-Clhj7YF6nb0",
+            pub: "BHQITc7TEOGk0NWa1SY3HomeqeZqNPhRWzt6yxUU1IqxH3zp_LZFHW1rA9Q7hKfXwUUjs4uFtDaV11p6C_xFuMY",
             role: "rtc"
           },
-          signature: "aY3LyncNQ0Il8d_wq2-bS8952_r7QUujl71B23S6sw6mGZuhsrWZ_63nvOJRGwVqInEOmjGRJD2QqYv8Oo0s0A"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2023-01-16",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "Rapz5UXA01v904yWmkVpPnIQSn06Rqv_sxk4gZDaJCRNuVKR9ue49ogGBz2vRGpAcQdh4NNI_3gq_V7ixQhm5A"
+          },
+          signature: "-gr6ZSPKNYAm_A1yJmB3XkP0MYa_-bG3bB44203nQuD3g2OCZ7vbtlQwzunWgsW6lz7n6prTKkpRLg7v1VokXA"
         },
         keys: {
           priv: {
@@ -920,10 +1125,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "Uu1tTbKFlhBXnqhZXeib_PRvbjW6WxZXcITFauw-XwY",
-            y: "ntZvDufAkblI-6Wu-GtpSY7Vh-5x9mzx1P7DdGatI7I",
+            x: "w6sANdW-OSslNmoKBOCuX2445gKvBFzimM6tEF8eNks",
+            y: "iCwtzb_30nEKdRDs5jYpKJMriOuZG1HLK_Z0hJwbaT4",
             crv: "P-256",
-            d: "oOGnJIGZh8Qt8LTXylXiIGpYjx1O1oFqbugIeRvxFjU"
+            d: "ZYbUesM_EGxtMuqwkv9xpAQMocTIC8nzgtfpHwat4TQ"
           },
           sign: {
             key_ops: [
@@ -931,10 +1136,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "uEjUHP_2fFSab-ek0FrIautdtKR6G9PtlrWKMowAN2k",
-            y: "fKZPvJ-8nzJq-HKYH32WCQ8VFcKx_HiYa1HMRPKS08c",
+            x: "o1DDb31gIsrwoGjVAW3aXvHuQXOZVc2dw55xG730fng",
+            y: "BXXbWkwQrHE5qNniK0OtzblqWRDnx_tsGkRIiDrbc88",
             crv: "P-256",
-            d: "S2ZUNHJL92tgU8-ASPnmC_yVt3zeC3qy_FIs6UMi4dw"
+            d: "Nn44EGxH4yCqas6AJU5_Okf1OY39_jaimaj0zn1Mnvk"
           }
         },
         rtc: 1,
@@ -946,8 +1151,8 @@ ${by.sig}`;
         role: "crew",
         name: "Hugo Lavoie",
         pin: "123463",
-        pub: "BFxe9NTyaxVwVffWIRhNHHGLMIHPBJRwR0tcUMrqWFEwRywEYFawJ6-xaD6BpVsMXH-i5D1A4v1HW0Nrkuy90ic",
-        sig: "BDmYna3dyP-3KLkPI8wenv07Hh2rcuVO_rrT-tKPlGjMQTMDN6EzgNON067D4tnbpprwyKX2LtnAORQMQ1DCtyU",
+        pub: "BLiDDo-bTyHDNuXJUXHSuTipfg4HzqPw2w1AyNjcUnL4CQA-R3BtGwTwUrNfI6AdxHAQ6xY2HgOy3JCzKmPhlZc",
+        sig: "BG9_SFVzt4jtktqvlLPzhXORoxGbUCf6b3F8W8b7z4optgtKjXl43RNi4CxPNvT_prpbPBnVtY5kEQ3LsqHmG2w",
         photo: "",
         minted: {
           role: "crew",
@@ -955,10 +1160,34 @@ ${by.sig}`;
           by: {
             name: "Ray Kowalczyk",
             pin: "710034",
-            sig: "BLCOszAga4hnTsudER7fiHaa8nM7gHtAcbhndcegLkehMB6uUt-kSEP4CbMXmvdLzEjkCo1hyKOUIpSoV5P0feU",
+            sig: "BJt06vFrkvUtcBQKdxbhr5jTqgdZIvFb3X_0kLqrAkH1TX0UmRiHEVYLfwzImCNSP-DZxs0QN50-Clhj7YF6nb0",
+            pub: "BHQITc7TEOGk0NWa1SY3HomeqeZqNPhRWzt6yxUU1IqxH3zp_LZFHW1rA9Q7hKfXwUUjs4uFtDaV11p6C_xFuMY",
             role: "rtc"
           },
-          signature: "H3Vr8oGerW_n_IgjRhF0mapUVKCfRtGdVkORukFVsT7QbS_n1kk458J568-hUvqgVAkWKr9MFgY8OgVFUNlNEQ"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2023-01-16",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "Rapz5UXA01v904yWmkVpPnIQSn06Rqv_sxk4gZDaJCRNuVKR9ue49ogGBz2vRGpAcQdh4NNI_3gq_V7ixQhm5A"
+          },
+          signature: "nfypjSQs7QGz-buswE5ftlcKVTnGxzaXCN9sLqITg2yia7hS9VzhQv-2TMjPW3S1TH6azPxVKfuW4l59TVLWGw"
         },
         keys: {
           priv: {
@@ -967,10 +1196,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "XF701PJrFXBV99YhGE0ccYswgc8ElHBHS1xQyupYUTA",
-            y: "RywEYFawJ6-xaD6BpVsMXH-i5D1A4v1HW0Nrkuy90ic",
+            x: "uIMOj5tPIcM25clRcdK5OKl-DgfOo_DbDUDI2NxScvg",
+            y: "CQA-R3BtGwTwUrNfI6AdxHAQ6xY2HgOy3JCzKmPhlZc",
             crv: "P-256",
-            d: "wDTi65obfgOxBAXly8uvzmbIvGcUEv1OaABKd922Y0w"
+            d: "93DH8nL3rc1kiiENuXvs48qFq2NN4WF-MXj1iLasoN0"
           },
           sign: {
             key_ops: [
@@ -978,10 +1207,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "OZidrd3I_7couQ8jzB6e_TseHaty5U7-utP60o-UaMw",
-            y: "QTMDN6EzgNON067D4tnbpprwyKX2LtnAORQMQ1DCtyU",
+            x: "b39IVXO3iO2S2q-Us_OFc5GjEZtQJ_pvcXxbxvvPiik",
+            y: "tgtKjXl43RNi4CxPNvT_prpbPBnVtY5kEQ3LsqHmG2w",
             crv: "P-256",
-            d: "xWeh-nxeqW7QwYx6JAIL0KOKWdm96sD6FZHwdtudOkk"
+            d: "PT5IdOrm9pmvl8wVPcAclwXIIORmPlBG6XSJSvTincE"
           }
         },
         rtc: 1,
@@ -993,8 +1222,8 @@ ${by.sig}`;
         role: "crew",
         name: "Isla McKay",
         pin: "123464",
-        pub: "BLN5hdnVASVF4l3t7MCcpShOzmYMG-6t-ke1UE8VU5q08tcK4uRxoFCDRqnjWkSAvTsTNWjRKXtUSxSGJ4GKCv0",
-        sig: "BN_MIe1wqoNNbxDfVb7ny_eQDTIKrf2NVDyTiHnRVdCTLK6qEsj5gBwjrajlf0svO4JSSJlC4oNITiLMMfOxFgE",
+        pub: "BKxv5IqtubY83h8mQmHNEWnTRygmpttMWQENhBfM8A3YkyFfAZib8TgI_TqdJBSNNwxNFWqRtgiM48j0-sSwqsM",
+        sig: "BHP2h1c5egVmrPUh26XydvFiEBEroj24wbtuCcuuxceG-jtYyXM0dl9ISEXR1Ql8i5tkOmuso0MnOUzz4Kj4yTk",
         photo: "",
         minted: {
           role: "crew",
@@ -1002,10 +1231,34 @@ ${by.sig}`;
           by: {
             name: "Tom Ferland",
             pin: "710047",
-            sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
+            sig: "BEmpU20BcC0zt6iU2KwmdxAlixWKNtlFKbzFlgLxtdbJoJIAKQhVObig-BT0zlBNQ0REHIp7eiHouZBS9W8q5jE",
+            pub: "BGR001qpUNN6v_w-4kXi32I4fEYHTZqwpEQr7KZLvU7d9VMK7ifaOmcpmyJEO9i7h9QagfiPzwhJjJd8mQJOGII",
             role: "rtc"
           },
-          signature: "mi2zo7wFdyAi8DHDABUk7mqkshc_5BA5MPbHIy2j9x3qc2PFtalu8oN9ftpLKXbcYNtn7gMklw2p27lMNSTSQw"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2025-04-22",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "Gnv2OTZ5lpGkSctwEnVJn2g9JMpQZawu5zSXxwpARiC7ztiW1DbK43AAADHQ21_L6Tff03LgU-6_5p5GKnGT6Q"
+          },
+          signature: "w1BnMRtRMwShcOOgyKs2ipTIQgwDylcIwES320D1mG1pE1PBd430ZGWfPgp5K4KV5VJ_Vuk79lstoL-bu4fnSg"
         },
         keys: {
           priv: {
@@ -1014,10 +1267,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "s3mF2dUBJUXiXe3swJylKE7OZgwb7q36R7VQTxVTmrQ",
-            y: "8tcK4uRxoFCDRqnjWkSAvTsTNWjRKXtUSxSGJ4GKCv0",
+            x: "rG_kiq25tjzeHyZCYc0RadNHKCam20xZAQ2EF8zwDdg",
+            y: "kyFfAZib8TgI_TqdJBSNNwxNFWqRtgiM48j0-sSwqsM",
             crv: "P-256",
-            d: "88w5cO-LZDdoE507iRXvcobVgJpaf-ln2aoYB_XtD9k"
+            d: "XX5otXkzSzkhrzgbIpJ6xqub9KsZXi0IyOTSr74fRZA"
           },
           sign: {
             key_ops: [
@@ -1025,10 +1278,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "38wh7XCqg01vEN9VvufL95ANMgqt_Y1UPJOIedFV0JM",
-            y: "LK6qEsj5gBwjrajlf0svO4JSSJlC4oNITiLMMfOxFgE",
+            x: "c_aHVzl6BWas9SHbpfJ28WIQESuiPbjBu24Jy67Fx4Y",
+            y: "-jtYyXM0dl9ISEXR1Ql8i5tkOmuso0MnOUzz4Kj4yTk",
             crv: "P-256",
-            d: "ItBtmiLfiIIhcueG3HUTJwRI0788BH9Qs93DnTZugDs"
+            d: "Rv8-NronjChU0ISS44L57ImEMycJlhhGDV02D3IcBRc"
           }
         },
         rtc: 2,
@@ -1040,8 +1293,8 @@ ${by.sig}`;
         role: "crew",
         name: "Jonas Berg",
         pin: "123465",
-        pub: "BDRHt47pAfq_h47ZlNPLqAWhn-p_d6LGyoXucXDonqIfYsRRCJFXHDiBLlbBznxU7DibbVMFLE8VH2hsWrxo3bA",
-        sig: "BF4ZgBLXCZLTuWvuvJdwU7fFFcedPDoWnraZLbiK0ckMGN_BE7mafHvE2yY5aVLiAZXjs2WaALz078JpbdxF9cU",
+        pub: "BMYor5spRrnn2gfwbu64aNZDTDUywNkt6Unjeq7ysEAWsTmZzud-GnECWqmgrUacWNaCnpftJdgs0vl6y3zOh7Y",
+        sig: "BIQ2-_xdy3EfW6YbQK3uYFrc897MGqTTtweuDZ0J6_zNuCyX7dxEMQdVnePJt39VC58jTAjAilphrAmx-SLZP7A",
         photo: "",
         minted: {
           role: "crew",
@@ -1049,10 +1302,34 @@ ${by.sig}`;
           by: {
             name: "Tom Ferland",
             pin: "710047",
-            sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
+            sig: "BEmpU20BcC0zt6iU2KwmdxAlixWKNtlFKbzFlgLxtdbJoJIAKQhVObig-BT0zlBNQ0REHIp7eiHouZBS9W8q5jE",
+            pub: "BGR001qpUNN6v_w-4kXi32I4fEYHTZqwpEQr7KZLvU7d9VMK7ifaOmcpmyJEO9i7h9QagfiPzwhJjJd8mQJOGII",
             role: "rtc"
           },
-          signature: "J-1JE6mMbjllVmEHgwX25_6jkq8W93egIuCv3VZ2YU5r8dmyoJa4tJAd2HxzdLWeTWk-Lpl_xjkBCdAt944T8g"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2025-04-22",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "Gnv2OTZ5lpGkSctwEnVJn2g9JMpQZawu5zSXxwpARiC7ztiW1DbK43AAADHQ21_L6Tff03LgU-6_5p5GKnGT6Q"
+          },
+          signature: "-_wIX0uvCHzr-aN-ccgpa6jAK29-Ttza1lxR_e98zV58xBYEpPxc2m6VWAk5x3VupEVOtb4GNRLoFFOCMk8Dtg"
         },
         keys: {
           priv: {
@@ -1061,10 +1338,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "NEe3jukB-r-HjtmU08uoBaGf6n93osbKhe5xcOieoh8",
-            y: "YsRRCJFXHDiBLlbBznxU7DibbVMFLE8VH2hsWrxo3bA",
+            x: "xiivmylGuefaB_Bu7rho1kNMNTLA2S3pSeN6rvKwQBY",
+            y: "sTmZzud-GnECWqmgrUacWNaCnpftJdgs0vl6y3zOh7Y",
             crv: "P-256",
-            d: "ZnkR4RYc7QxaAV6aAk0FvSmTwvFjZ1kjxsWU48Ei8Os"
+            d: "GdMcyUJsQwpl0zSuDaSwP8pa79Y7gnrdrRFpCMDoB9Y"
           },
           sign: {
             key_ops: [
@@ -1072,10 +1349,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "XhmAEtcJktO5a-68l3BTt8UVx508OhaetpktuIrRyQw",
-            y: "GN_BE7mafHvE2yY5aVLiAZXjs2WaALz078JpbdxF9cU",
+            x: "hDb7_F3LcR9bphtAre5gWtzz3swapNO3B64NnQnr_M0",
+            y: "uCyX7dxEMQdVnePJt39VC58jTAjAilphrAmx-SLZP7A",
             crv: "P-256",
-            d: "8bzJwDgUiCWC1ftIIeQIpeq2l_3OQ0Q6ob1b6aaZyTg"
+            d: "SQjVldGipK9RSJA9aJJ4_C3n9xBdjoL-WPY6WUQp924"
           }
         },
         rtc: 2,
@@ -1087,8 +1364,8 @@ ${by.sig}`;
         role: "crew",
         name: "Kira Nowak",
         pin: "123466",
-        pub: "BIb4q0g6rlcWUeFq8AmKE7aGbU8FbnFkv-QYChQF-olO3EKzWDHQhGoFSQPNm2z-z8xfD8a7nzRREtRxEV6IWcQ",
-        sig: "BOdUdKjYq-Ua959JEWYmg6zevtLxaxZhiZ3gBUdldJsQtWNdL8BZjRU2EJN0OthaDvYFxnLH33UIpafMOUYokGc",
+        pub: "BASVD4dPPbaW-7vOpjlpiLL-p50vMoivFh9g5hSo1Ljl1hAlqrMhNKkwB2BlAvngtTSjWVPnFPD67w5RcvsXano",
+        sig: "BKOHQRGYdZWW_qLUgshdHIF4bpr62TQaIPGzua1e4e7mHG4F34cldl_grgkH4JRPPCu1W4yLnubLtt_zv9BZZXc",
         photo: "",
         minted: {
           role: "crew",
@@ -1096,10 +1373,34 @@ ${by.sig}`;
           by: {
             name: "Tom Ferland",
             pin: "710047",
-            sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
+            sig: "BEmpU20BcC0zt6iU2KwmdxAlixWKNtlFKbzFlgLxtdbJoJIAKQhVObig-BT0zlBNQ0REHIp7eiHouZBS9W8q5jE",
+            pub: "BGR001qpUNN6v_w-4kXi32I4fEYHTZqwpEQr7KZLvU7d9VMK7ifaOmcpmyJEO9i7h9QagfiPzwhJjJd8mQJOGII",
             role: "rtc"
           },
-          signature: "2q9nDc7LoZDJjcmDViho_hn6trrjqU7rPqWVt5KRNijBieQiI2n_hMYeG-6hFTPRFYoXjGZqLvWgbUvKgMmz7A"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2025-04-22",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "Gnv2OTZ5lpGkSctwEnVJn2g9JMpQZawu5zSXxwpARiC7ztiW1DbK43AAADHQ21_L6Tff03LgU-6_5p5GKnGT6Q"
+          },
+          signature: "E7con3PNjCEEduNVtC6Q41ekyo0FuBZczAcN9dbZ0TxqeJrnN61TRvxcunBq1B1HV4awM9F-YmA0Bm58izv7ww"
         },
         keys: {
           priv: {
@@ -1108,10 +1409,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "hvirSDquVxZR4WrwCYoTtoZtTwVucWS_5BgKFAX6iU4",
-            y: "3EKzWDHQhGoFSQPNm2z-z8xfD8a7nzRREtRxEV6IWcQ",
+            x: "BJUPh089tpb7u86mOWmIsv6nnS8yiK8WH2DmFKjUuOU",
+            y: "1hAlqrMhNKkwB2BlAvngtTSjWVPnFPD67w5RcvsXano",
             crv: "P-256",
-            d: "xXBk2oA8GumeBLWCDatNsbqLvO_TOeFUf0fv1r_I1QY"
+            d: "M3iZMZaAN8NX4GhNdLKADuJo3l91kCBuUkh7fpYweNU"
           },
           sign: {
             key_ops: [
@@ -1119,10 +1420,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "51R0qNir5Rr3n0kRZiaDrN6-0vFrFmGJneAFR2V0mxA",
-            y: "tWNdL8BZjRU2EJN0OthaDvYFxnLH33UIpafMOUYokGc",
+            x: "o4dBEZh1lZb-otSCyF0cgXhumvrZNBog8bO5rV7h7uY",
+            y: "HG4F34cldl_grgkH4JRPPCu1W4yLnubLtt_zv9BZZXc",
             crv: "P-256",
-            d: "oFqRg-t_BqNik0RgIUp3pUwyibzGb2Lxgymb4_b-Z1w"
+            d: "QVxkm7dWxPcN3L-2GaGa-JWgPgFIR-lwTeDErdKyZi0"
           }
         },
         rtc: 2,
@@ -1134,8 +1435,8 @@ ${by.sig}`;
         role: "crew",
         name: "Liam Desjardins",
         pin: "123467",
-        pub: "BPrRwq83kTd35JAwfACxsvDXTktxugj14DPwQC-KJFLOskd-XP2H5qtVLrT_x0i40KghvSZXorHS21eBytuDv98",
-        sig: "BLKaj5r_ZJQApHBePiBM1LQh9b0Oe00btG8axsV6Nlwqw41rCHiz_0gWl4w-VKsh7Bl9zpXTHg7hMdT_ycRFobA",
+        pub: "BOV7hGrljZ9V0uedp9DiAJdQcY8bQqIzrHIvTMYdrQPWh_YRoHrY0HSvRHyfxkljKuPadxfpQtOwJmFr1SgLF64",
+        sig: "BJbfZQqLxdBJkZRLxuvieycwSfDD4_SnG47otwLzP_jlSyefesb6iU3cK_E2k4cTAXrf6ysek7riCK30v6WFJW8",
         photo: "",
         minted: {
           role: "crew",
@@ -1143,10 +1444,34 @@ ${by.sig}`;
           by: {
             name: "Tom Ferland",
             pin: "710047",
-            sig: "BKLeQJijYrxHORJ9cxJ8JU7RPSpbDEDFpHMcxQAaNBXJtjnA472BEuvPeIxSKvyG6fHoP4X8twV7t50isccBCzc",
+            sig: "BEmpU20BcC0zt6iU2KwmdxAlixWKNtlFKbzFlgLxtdbJoJIAKQhVObig-BT0zlBNQ0REHIp7eiHouZBS9W8q5jE",
+            pub: "BGR001qpUNN6v_w-4kXi32I4fEYHTZqwpEQr7KZLvU7d9VMK7ifaOmcpmyJEO9i7h9QagfiPzwhJjJd8mQJOGII",
             role: "rtc"
           },
-          signature: "nyEov82ZNG7aeiEscspsxAc_i9i6gbZ6L_sSOxS-GV-23lg9qobrDMtl_uIVvGMRKhdOtM6prTu1mBzDd1jHaQ"
+          root: {
+            name: "Marguerite Boudreau",
+            sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+            pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+          },
+          via: {
+            role: "rtc",
+            start: "2025-04-22",
+            by: {
+              name: "Marguerite Boudreau",
+              pin: "900011",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo",
+              role: "superintendent"
+            },
+            root: {
+              name: "Marguerite Boudreau",
+              sig: "BDZUPUJIC4bOrhXsAtVQHXljT_VMnipGaHJ9XbKXGKidT_7GdvTsXS98bcpGf_3gjz3pNA8bi9-Vbqr1aqdEH34",
+              pub: "BHWqDBqnranCab_Y8eDHyYJyesrk7wYdtlRw5HFYz_Df9lObwSxe20rPOpPH1gF-PgnWOVOgwNL3KNo8ap6TMPo"
+            },
+            via: null,
+            signature: "Gnv2OTZ5lpGkSctwEnVJn2g9JMpQZawu5zSXxwpARiC7ztiW1DbK43AAADHQ21_L6Tff03LgU-6_5p5GKnGT6Q"
+          },
+          signature: "Kz1CQ-aKmMDBba28OHigo7acC662FOv2iQsgRK6L3yNRUBUYOPxLXoGSyuXvKjCaR9fU8nKKXBayIPpvKi3C8A"
         },
         keys: {
           priv: {
@@ -1155,10 +1480,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "-tHCrzeRN3fkkDB8ALGy8NdOS3G6CPXgM_BAL4okUs4",
-            y: "skd-XP2H5qtVLrT_x0i40KghvSZXorHS21eBytuDv98",
+            x: "5XuEauWNn1XS552n0OIAl1BxjxtCojOsci9Mxh2tA9Y",
+            y: "h_YRoHrY0HSvRHyfxkljKuPadxfpQtOwJmFr1SgLF64",
             crv: "P-256",
-            d: "FOIg9kbeoFtDirI2obUdjRqbD1tP1MuplHiCxj-uyFk"
+            d: "djsez3pwk5Tlk1dbQJKlSWAslgqn6_fN64hR-j6xaf4"
           },
           sign: {
             key_ops: [
@@ -1166,10 +1491,10 @@ ${by.sig}`;
             ],
             ext: true,
             kty: "EC",
-            x: "spqPmv9klACkcF4-IEzUtCH1vQ57TRu0bxrGxXo2XCo",
-            y: "w41rCHiz_0gWl4w-VKsh7Bl9zpXTHg7hMdT_ycRFobA",
+            x: "lt9lCovF0EmRlEvG6-J7JzBJ8MPj9Kcbjui3AvM_-OU",
+            y: "Syefesb6iU3cK_E2k4cTAXrf6ysek7riCK30v6WFJW8",
             crv: "P-256",
-            d: "b4o1a-NAYV1St2MZewQTMH4-4naRZkUzbtyHJa9OMXw"
+            d: "UI7dnHE2Lp9jJt-WDOAIgXelViqXDj_QhRlq5x-R3Bs"
           }
         },
         rtc: 2,
@@ -1181,15 +1506,15 @@ ${by.sig}`;
     tests: [
       {
         name: "test1-definitions-signals.txt",
-        source: '# Test 1 \xB7 Definitions and signals\ntime: 45m\npass: 90%\nshuffle: items options\nback: no\nareas: definitions "Definitions" \xB7 signals "Signals & Rule 27" \xB7 time "Time & bulletins"\n\n---\nid: t1-speeds\ntype: match\narea: definitions\nref: CROR SPEEDS\nQ: Match each speed with its definition.\nL: Slow speed = A speed not exceeding 15 MPH.\nL: Reduced speed = A speed that will permit stopping within one half the range of vision of equipment.\nL: Restricted speed = Stopping within one half the range of vision of equipment, prepared to stop short of a switch not properly lined, not exceeding slow speed.\nL: Medium speed = A speed not exceeding 30 MPH.\n---\nid: t1-transfer\ntype: mc\narea: definitions\nref: CROR GENERAL\nQ: A transfer is:\n*a) An engine with or without cars operating on the main track at speeds not exceeding 15 MPH.\nb) An engine intended to operate above 15 MPH, equipped with a TIBS.\nc) A movement confined to yard tracks.\n---\nid: t1-27b\ntype: mc\narea: signals\nref: CROR 27(b)\nsvg: signal G,x,R\nQ: What is the indication of this signal?\n*a) Proceed, reducing to slow speed through turnouts when practicable, preparing to stop at the next signal.\nb) Clear signal.\nc) Stop signal.\n---\nid: t1-27exc\ntype: mc\narea: signals\nref: CROR 27(b)\nsvg: signal x,Y\nQ: Approaching this signal prepared to stop, how must it be regarded?\na) As a Stop signal.\n*b) As Restricting.\nc) As Clear.\n---\nid: t1-27d\ntype: mc\narea: signals\nref: CROR 27(d)\nQ: A block signal displays an indication out of the normal progression from the advance signal. The movement must:\n*a) Stop immediately, consistent with safe train handling, and contact the RTC.\nb) Proceed at restricted speed to the next signal.\nc) Treat it as the least restrictive indication.\n---\nid: t1-34b\ntype: mc\narea: signals\nref: CROR 34(b)\nQ: Which of these must be called out between crew members?\na) Mileposts.\n*b) A switch not properly lined for the movement.\nc) Whistle posts.\n---\nid: t1-83c\ntype: mc\narea: time\nref: CROR 83(c)\nQ: Summary bulletins are issued:\na) The first of every month.\n*b) The first of May and November.\nc) With each new time table.\n---\nid: t1-157\ntype: short\narea: time\nref: CROR 157(b)\nQ: A crew member checks the TGBO for designation, routing, page count and item count. How is that check shown?\nA: Initial each page except the last, initial the "applicable on" portion and the designation, sign the last page.\n'
+        source: '# Test 1 \xB7 Definitions and signals\ntime: 45m\npass: 90%\nshuffle: items options\nback: no\nareas: definitions "Definitions" \xB7 signals "Signals & Rule 27" \xB7 time "Time & bulletins"\n\n---\nid: t1-speeds\ntype: match\narea: definitions\nref: CROR Slow Speed, CROR Reduced Speed, CROR Restricted Speed, CROR Medium Speed\ncror: def:slow-speed@d6e3f7a49348 def:reduced-speed@6f412e3f5042 def:restricted-speed@ab32ce180c82 def:medium-speed@ca5e9f04bdc8\nQ: Match each speed with its definition.\nL: Slow speed = A speed not exceeding 15 MPH.\nL: Reduced speed = A speed that will permit stopping within one half the range of vision of equipment.\nL: Restricted speed = Stopping within one half the range of vision of equipment, prepared to stop short of a switch not properly lined, not exceeding slow speed.\nL: Medium speed = A speed not exceeding 30 MPH.\n---\nid: t1-transfer\ntype: mc\narea: definitions\nref: CROR Transfer\ncror: def:transfer@835052f7156c\nQ: A transfer is:\n*a) An engine with or without cars operating on the main track at speeds not exceeding 15 MPH.\nb) An engine intended to operate above 15 MPH, equipped with a TIBS.\nc) A movement confined to yard tracks.\n---\nid: t1-27b\ntype: mc\narea: signals\nref: CROR 27(b)\ncror: 27(b)@344a95b9ee12\nsvg: signal G,x,R\nQ: What is the indication of this signal?\n*a) Proceed, reducing to slow speed through turnouts when practicable, preparing to stop at the next signal.\nb) Clear signal.\nc) Stop signal.\n---\nid: t1-27exc\ntype: mc\narea: signals\nref: CROR 27(b)\ncror: 27(b)@344a95b9ee12\nsvg: signal x,Y\nQ: Approaching this signal prepared to stop, how must it be regarded?\na) As a Stop signal.\n*b) As Restricting.\nc) As Clear.\n---\nid: t1-27d\ntype: mc\narea: signals\nref: CROR 27(d)\ncror: 27(d)@48df0c767870\nQ: A block signal displays an indication out of the normal progression from the advance signal. The movement must:\n*a) Stop immediately, consistent with safe train handling, and contact the RTC.\nb) Proceed at restricted speed to the next signal.\nc) Treat it as the least restrictive indication.\n---\nid: t1-34b\ntype: mc\narea: signals\nref: CROR 34(b)\ncror: 34(b)@55d06e0ddf76\nQ: Which of these must be called out between crew members?\na) Mileposts.\n*b) A switch not properly lined for the movement.\nc) Whistle posts.\n---\nid: t1-83c\ntype: mc\narea: time\nref: CROR 83(c)\ncror: 83(c)@b808f4d61719\nQ: Summary bulletins are issued:\na) The first of every month.\n*b) The first of May and November.\nc) With each new time table.\n---\nid: t1-157\ntype: short\narea: time\nref: CROR 157(b)\ncror: 157(b)@38304a253951\nQ: A crew member checks the TGBO for designation, routing, page count and item count. How is that check shown?\nA: Initial each page except the last, initial the "applicable on" portion and the designation, sign the last page.\n'
       },
       {
         name: "test2-crossings-switches.txt",
-        source: '# Test 2 \xB7 Crossings, switches and securement\ntime: 45m\npass: 90%\nshuffle: items options\nback: no\nareas: crossings "Crossings" \xB7 switches "Switches & derails" \xB7 securement "Securement" \xB7 shoving "Shoving"\n\n---\nid: t2-14l\ntype: mc\narea: crossings\nref: CROR 14(l)\nQ: At 30 MPH, when must the whistle be sounded approaching a public crossing at grade?\na) At the whistle post, \xBC mile out.\n*b) To provide 20 seconds warning, prolonged or repeated until fully occupied.\nc) To provide 10 seconds warning.\n---\nid: t2-19\ntype: mc\narea: crossings\nref: CROR 19\nQ: Ditch lights must be displayed in the direction of travel:\na) Whenever the headlight is dimmed or full.\n*b) When the headlight is required to be displayed at full power.\nc) Only at public crossings.\n---\nid: t2-103-1\ntype: mc\narea: crossings\nref: CROR 103.1(b)\nQ: A movement has stopped in the vicinity of a crossing with automatic warning devices. From 300 feet it must not exceed:\n*a) 10 MPH until the crossing is fully occupied.\nb) 15 MPH.\nc) 25 MPH.\n---\nid: t2-104a\ntype: mc\narea: switches\nref: CROR 104(a)\nsvg: switch reversed\nQ: After a hand operated switch has been turned, what must be done?\n*a) Examine the points and observe the target, reflector or light to ensure the switch is properly lined for the route.\nb) Examine the points to ensure the switch is properly secured.\nc) Check for obstructions in the moving parts.\n---\nid: t2-104-5\ntype: mc\narea: switches\nref: CROR 104.5\nQ: A movement approaching a derail set in the derailing position must stop at least:\na) 10 feet before it.\n*b) 25 feet before it.\nc) 50 feet before it.\n---\nid: t2-112-test\ntype: mc\narea: securement\nref: CROR 112\nQ: How is the effectiveness of hand brakes tested?\na) Ensure all pistons are extended.\n*b) Release all air brakes and allow or cause the slack to adjust.\nc) Nothing is required once they are applied.\n---\nid: t2-112-move\ntype: mc\narea: securement\nref: CROR 112(d)\nQ: May hand brakes be applied while equipment is being pulled or shoved?\na) Yes.\n*b) No.\n---\nid: t2-115\ntype: mc\narea: shoving\nref: CROR 115(a)\nQ: When equipment is shoved, a crew member must be:\na) On the leading piece of equipment.\n*b) On the leading piece of equipment or on the ground, positioned to observe the track and control the move.\nc) On the ground.\n---\nid: t2-115b\ntype: short\narea: shoving\nref: CROR 115(b)\nQ: Who may determine that a track is "known to be clear"?\nA: A qualified employee who can observe the track and has radio contact with the employee controlling the movement.\n'
+        source: '# Test 2 \xB7 Crossings, switches and securement\ntime: 45m\npass: 90%\nshuffle: items options\nback: no\nareas: crossings "Crossings" \xB7 switches "Switches & derails" \xB7 securement "Securement" \xB7 shoving "Shoving"\n\n---\nid: t2-14l\ntype: mc\narea: crossings\nref: CROR 14(l)\ncror: 14(l)@65c74c15a686\nQ: At 30 MPH, when must the whistle be sounded approaching a public crossing at grade?\na) At the whistle post, \xBC mile out.\n*b) To provide 20 seconds warning, prolonged or repeated until fully occupied.\nc) To provide 10 seconds warning.\n---\nid: t2-19\ntype: mc\narea: crossings\nref: CROR 19\ncror: 19@e75172222c4c\nQ: Ditch lights must be displayed in the direction of travel:\na) Whenever the headlight is dimmed or full.\n*b) When the headlight is required to be displayed at full power.\nc) Only at public crossings.\n---\nid: t2-103-1\ntype: mc\narea: crossings\nref: CROR 103.1(b)\ncror: 103.1(b)@60c87f98b81a\nQ: A movement has stopped in the vicinity of a crossing with automatic warning devices. From 300 feet it must not exceed:\n*a) 10 MPH until the crossing is fully occupied.\nb) 15 MPH.\nc) 25 MPH.\n---\nid: t2-104a\ntype: mc\narea: switches\nref: CROR 104(a)\ncror: 104(a)@386fd7db2f12\nsvg: switch reversed\nQ: After a hand operated switch has been turned, what must be done?\n*a) Examine the points and observe the target, reflector or light to ensure the switch is properly lined for the route.\nb) Examine the points to ensure the switch is properly secured.\nc) Check for obstructions in the moving parts.\n---\nid: t2-104-5\ntype: mc\narea: switches\nref: CROR 104.5\ncror: 104.5@044d2cc18e5b\nQ: A movement approaching a derail set in the derailing position must stop at least:\na) 10 feet before it.\n*b) 25 feet before it.\nc) 50 feet before it.\n---\nid: t2-112-test\ntype: mc\narea: securement\nref: CROR 112\ncror: 112@aae25e64a65f\nQ: How is the effectiveness of hand brakes tested?\na) Ensure all pistons are extended.\n*b) Release all air brakes and allow or cause the slack to adjust.\nc) Nothing is required once they are applied.\n---\nid: t2-112-move\ntype: mc\narea: securement\nref: CROR 112(d)\ncror: 112(d)@e6597805a534\nQ: May hand brakes be applied while equipment is being pulled or shoved?\na) Yes.\n*b) No.\n---\nid: t2-115\ntype: mc\narea: shoving\nref: CROR 115(a)\ncror: 115(a)@9c037578a44c\nQ: When equipment is shoved, a crew member must be:\na) On the leading piece of equipment.\n*b) On the leading piece of equipment or on the ground, positioned to observe the track and control the move.\nc) On the ground.\n---\nid: t2-115b\ntype: short\narea: shoving\nref: CROR 115(b)\ncror: 115(b)@725b5183e74a\nQ: Who may determine that a track is "known to be clear"?\nA: A qualified employee who can observe the track and has radio contact with the employee controlling the movement.\n'
       },
       {
         name: "test3-block-c.txt",
-        source: '# Test 3 \xB7 Block C (sample)\ntime: 90m\npass: 90%\nshuffle: items options\nback: no\nareas: definitions "Definitions" \xB7 signals "Signals & Rule 27" \xB7 crossings "Crossings" \xB7 ocs "OCS"\n\n---\nid: q-def-reduced\ntype: match\narea: definitions\nref: CROR SPEEDS\nQ: Match each term with its definition.\nL: Reduced speed = A speed that will permit stopping within one half the range of vision of equipment.\nL: Restricted speed = A speed that will permit stopping within one half the range of vision of equipment, prepared to stop short of a switch not properly lined, and in no case exceeding slow speed.\nL: Transfer = An engine with or without cars operating on the main track at speeds not exceeding 15 MPH.\n---\nid: q27-green-dark\ntype: mc\narea: signals\nref: CROR 27(b)\ntags: imperfect-display difficulty:2\nsvg: signal G,x,R\nQ: What is the indication of this signal?\n*a) Proceed, reducing to slow speed through turnouts when practicable, preparing to stop at the next signal.\nb) Clear signal.\nc) Stop signal.\n---\nid: q14-whistle\ntype: mc\narea: crossings\nref: CROR 14(l)\ntags: whistle difficulty:2\nQ: Travelling at 30 MPH, when must the whistle be sounded approaching a public crossing at grade?\na) \xBC mile from the crossing, prolonged or repeated until the crossing is fully occupied.\nb) To provide 10 seconds warning before entering the crossing.\n*c) To provide 20 seconds warning before entering the crossing, continuing until the crossing is fully occupied.\n---\nid: q302-verify\ntype: short\narea: ocs\nref: CROR 302(b)\nimg: clearance-134.png\nalt: OCS clearance No. 134 addressed to CN 5411\nQ: Refer to Clearance 134. What must be verified before the clearance is acted upon?\nA: Conductor and locomotive engineer each have a copy; designation and engine number verified.\n'
+        source: '# Test 3 \xB7 Block C (sample)\ntime: 90m\npass: 90%\nshuffle: items options\nback: no\nareas: definitions "Definitions" \xB7 signals "Signals & Rule 27" \xB7 crossings "Crossings" \xB7 ocs "OCS"\n\n---\nid: q-def-reduced\ntype: match\narea: definitions\nref: CROR Reduced Speed, CROR Restricted Speed, CROR Transfer\ncror: def:reduced-speed@6f412e3f5042 def:restricted-speed@ab32ce180c82 def:transfer@835052f7156c\nQ: Match each term with its definition.\nL: Reduced speed = A speed that will permit stopping within one half the range of vision of equipment.\nL: Restricted speed = A speed that will permit stopping within one half the range of vision of equipment, prepared to stop short of a switch not properly lined, and in no case exceeding slow speed.\nL: Transfer = An engine with or without cars operating on the main track at speeds not exceeding 15 MPH.\n---\nid: q27-green-dark\ntype: mc\narea: signals\nref: CROR 27(b)\ncror: 27(b)@344a95b9ee12\ntags: imperfect-display difficulty:2\nsvg: signal G,x,R\nQ: What is the indication of this signal?\n*a) Proceed, reducing to slow speed through turnouts when practicable, preparing to stop at the next signal.\nb) Clear signal.\nc) Stop signal.\n---\nid: q14-whistle\ntype: mc\narea: crossings\nref: CROR 14(l)\ncror: 14(l)@65c74c15a686\ntags: whistle difficulty:2\nQ: Travelling at 30 MPH, when must the whistle be sounded approaching a public crossing at grade?\na) \xBC mile from the crossing, prolonged or repeated until the crossing is fully occupied.\nb) To provide 10 seconds warning before entering the crossing.\n*c) To provide 20 seconds warning before entering the crossing, continuing until the crossing is fully occupied.\n---\nid: q302-verify\ntype: short\narea: ocs\nref: CROR 302(b)\ncror: 302(b)@2debdb59d8c5\nimg: clearance-134.png\nalt: OCS clearance No. 134 addressed to WNR 5411\nQ: Refer to Clearance 134. What must be verified before the clearance is acted upon?\nA: Conductor and locomotive engineer each have a copy; designation and engine number verified.\n'
       }
     ]
   };
@@ -1214,7 +1539,7 @@ ${by.sig}`;
     if (!m) throw new Error(`bad area "${a}"`);
     return { id: m[1], label: m[2] || m[1] };
   });
-  var KEYS = /* @__PURE__ */ new Set(["id", "type", "area", "ref", "lcr", "tags", "svg", "img", "alt", "worth"]);
+  var KEYS = /* @__PURE__ */ new Set(["id", "type", "area", "ref", "lcr", "tags", "svg", "img", "alt", "worth", "cror"]);
   var parseTest = async (source) => {
     const errors = [];
     const blocks2 = source.replace(/\r\n/g, "\n").split(/\n---+\n/);
@@ -1240,6 +1565,7 @@ ${by.sig}`;
           test.settings.shuffleItems = /items/.test(v);
           test.settings.shuffleOptions = /options/.test(v);
         } else if (k === "back") test.settings.allowBack = /^(yes|true|on)$/i.test(v);
+        else if (k === "cror") test.settings.openBook = /^(open|yes|true|on)$/i.test(v);
         else if (k === "areas") test.areas = parseAreas(v);
         else errors.push(`header: unknown key "${k}"`);
       } catch (e) {
@@ -1250,7 +1576,7 @@ ${by.sig}`;
     const seen2 = /* @__PURE__ */ new Set();
     for (const [n, block] of blocks2.entries()) {
       if (!block.trim()) continue;
-      const item = { type: "mc", prompt: "", options: [], pairs: [], key: null, answer: "", ref: [], tags: [], img: [], worth: 1 };
+      const item = { type: "mc", prompt: "", options: [], pairs: [], key: null, answer: "", ref: [], cror: [], tags: [], img: [], worth: 1 };
       let mode = null;
       for (const raw of block.split("\n")) {
         const line = raw.trimEnd();
@@ -1284,6 +1610,7 @@ ${by.sig}`;
           const k = m[1].toLowerCase(), v = m[2].trim();
           if (k === "ref") item.ref.push(...v.split(/\s*[,;]\s*|\s+(?=CROR|GOI|GR)/).filter(Boolean));
           else if (k === "tags") item.tags.push(...v.split(/\s+/).filter(Boolean));
+          else if (k === "cror") item.cror.push(...v.split(/[\s,;]+/).filter(Boolean));
           else if (k === "img") item.img.push({ name: v, alt: "" });
           else if (k === "alt") {
             if (item.img.length) item.img[item.img.length - 1].alt = v;
@@ -1317,7 +1644,7 @@ ${by.sig}`;
     if (!test.items.length) errors.push("no items (separate items with --- lines)");
     return { test, errors };
   };
-  var publicItem = ({ key, answer, ...rest }) => rest;
+  var publicItem = ({ key, answer, ref, cror, lcr, tags, ...rest }) => rest;
 
   // src/testfile.js
   init_armor();
@@ -1367,6 +1694,38 @@ ${by.sig}`;
     wrapIn: ({ from, until }) => `ballast/wrap/1
 ${from}
 ${until}`
+  };
+
+  // src/director.js
+  init_armor();
+  init_bytes();
+  init_profile();
+  init_bytes();
+  var itemHash = async (it) => {
+    const p = publicItem(it);
+    const canon = { id: p.id, type: p.type, prompt: p.prompt, options: p.options || [], pairs: p.pairs || [], svg: p.svg || null, img: (p.img || []).map((i) => ({ name: i.name, alt: i.alt || "" })), worth: p.worth || 1, area: p.area || null };
+    return hex(await sha256(utf8(JSON.stringify(canon))));
+  };
+  var itemsRoot = (items) => Object.keys(items).sort().map((id2) => `${id2}:${items[id2]}`).join("\n");
+  var approveSource = async (director, source, title) => {
+    const hash = await sourceHash(source);
+    const { test, errors } = await parseTest(source);
+    if (errors.length) throw new Error(`cannot approve: ${errors[0]}`);
+    const items = {};
+    for (const it of test.items) items[it.id] = await itemHash(it);
+    const signature = await signBytes(director.sign, utf8(`ballast/approval/2
+${hash}
+${itemsRoot(items)}`));
+    return armor("APPROVAL", { v: 2, kind: "approval", hash, items, title, by: director.sig, pub: director.pub, name: director.name, signature }, { title, hash: hash.slice(0, 12), by: director.name });
+  };
+  var readApproval = async (text2) => (await dearmor(text2, "APPROVAL")).body;
+  var checkApprovalSignature = (approval) => approval?.v === 2 && !!approval.items && verifyBytes(approval.by, approval.signature, utf8(`ballast/approval/2
+${approval.hash}
+${itemsRoot(approval.items)}`));
+  var sendReport = async (teacher, directorPub, report) => {
+    const salt = unb64url(report.test);
+    const key = await hkdfKey(await shared(teacher.priv, directorPub), salt, INFO.report);
+    return armor("REPORT", { v: 1, kind: "report", test: report.test, teacher: teacher.pub, box: await sealJSON(key, report) }, { title: report.title, teacher: teacher.name, trains: report.rows.length });
   };
 
   // src/shuffle.js
@@ -1428,8 +1787,14 @@ ${until}`
     const text2 = await armor("TEST", body, { title: test.title, rtc: rtcName, items: items.length, clearances: trains.length, approved: approval ? "yes" : "no", from: window2.from, until: window2.until, complete: hash.slice(0, 4).toUpperCase() });
     return { text: text2, record: { id: id2, salt, hash, key: b64url(K), title: test.title, window: window2 } };
   };
-  var copyTest = async (text2, train, pin, at = Date.now()) => {
+  var copyTest = async (text2, train, pin, at = Date.now(), trust = null) => {
     const { body } = await dearmor(text2, "TEST");
+    if (trust) {
+      const a = body.approval;
+      if (!a) throw new Error("This test carries no superintendent approval. Crew only write approved tests.");
+      if (a.by !== trust.root) throw new Error(`This test was approved by ${a.name || "someone"}, not by the superintendent who stands over your RTC.`);
+      if (!await checkApprovalSignature(a)) throw new Error("The approval on this test does not verify.");
+    }
     const w = checkWindow(body.window);
     const when = (iso) => new Date(iso).toLocaleString();
     if (at < Date.parse(w.from)) throw new Error(`This test opens at ${when(w.from)}.`);
@@ -1464,6 +1829,10 @@ ${until}`
         const it = byId[itemId];
         if (!it) throw new Error(`no item ${itemId}`);
         const p = await openJSON(await hkdfKey(Kb, saltBytes, INFO.item(itemId)), it.box);
+        if (trust) {
+          const want = body.approval.items[itemId];
+          if (!want || want !== await itemHash(p)) throw new Error(`Item ${itemId} is not what the superintendent approved. Stop and tell the superintendent.`);
+        }
         if (body.settings.shuffleOptions && p.options?.length) p.options = shuffled(p.options, sid + itemId);
         if (p.pairs?.length) p.rights = shuffled(p.pairs.map((x) => ({ id: x.id, text: x.right })), sid + itemId + "r");
         return p;
@@ -1598,23 +1967,6 @@ ${box}`);
       box
     };
     return armor("CANCEL", body, { title: record.title, train: `Crew ${pin}`, grade: `${Math.round(result.grade * 100)}%`, release: (release.hash || "").slice(0, 16) });
-  };
-
-  // src/director.js
-  init_armor();
-  init_bytes();
-  init_profile();
-  var approveSource = async (director, source, title) => {
-    const hash = await sourceHash(source);
-    const signature = await signBytes(director.sign, utf8(`ballast/approval/1
-${hash}`));
-    return armor("APPROVAL", { v: 1, kind: "approval", hash, title, by: director.sig, pub: director.pub, name: director.name, signature }, { title, hash: hash.slice(0, 12), by: director.name });
-  };
-  var readApproval = async (text2) => (await dearmor(text2, "APPROVAL")).body;
-  var sendReport = async (teacher, directorPub, report) => {
-    const salt = unb64url(report.test);
-    const key = await hkdfKey(await shared(teacher.priv, directorPub), salt, INFO.report);
-    return armor("REPORT", { v: 1, kind: "report", test: report.test, teacher: teacher.pub, box: await sealJSON(key, report) }, { title: report.title, teacher: teacher.name, trains: report.rows.length });
   };
 
   // tutorial/src/cast.js
