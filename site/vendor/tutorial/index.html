@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-YdHNCtjzvBpKcvdHTYe9wbVs3xJKXDXQoe/CZn1mr0k='; style-src 'sha256-8T1r5YS24OK5uRtWyFz/gG9DCgMNnnNb+a233t5p4q0='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-2oCf0sk63STBJmqv9fi8e8U26HinaHlvq7QKc/f8rZs='; style-src 'sha256-1d33VqlZCyv5zMtZJte6R22gbcIje2BN2T3Hd0E1c2M='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast tutorial</title>
 <style>* { box-sizing:border-box } html, body { margin:0; height:100%; font:14px/1.4 "Segoe UI", Arial, sans-serif; overflow:hidden; background:#0b3d5c }
 .desk { position:absolute; inset:0; background:radial-gradient(ellipse at 30% 20%, #1e6a8f 0%, #0b3d5c 55%, #072a40 100%); overflow:hidden }
@@ -27,7 +27,7 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
 .toast { position:absolute; right:16px; bottom:52px; background:#111; color:#fff; padding:10px 14px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.4); z-index:9 }
 /* coach */
 .coach { position:absolute; left:0; top:22px; bottom:40px; width:320px; background:#fff7ed; border-right:3px solid #f59e0b; padding:14px 16px; overflow:auto; z-index:6; box-shadow:6px 0 20px rgba(0,0,0,.25) }
-.toc { margin:-4px -16px 12px; padding:8px 12px 10px; background:#fde68a; border-bottom:2px solid #f59e0b } .chunks { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px } .chunk { flex:1 1 auto; font:600 12px/1.2 inherit; padding:7px 6px; white-space:nowrap; border:1px solid #d97706; border-radius:6px; background:#fff; color:#7c2d12; cursor:pointer } .chunk.on { background:#f59e0b; color:#fff } .chunk.done { background:#fef3c7 } .chunk:hover { background:#fbbf24; color:#111 }
+.toc { margin:-4px -16px 12px; padding:8px 12px 10px; background:#fde68a; border-bottom:2px solid #f59e0b } .chunks { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px } .chunk { flex:1 1 28%; font:600 12px/1.2 inherit; padding:7px 6px; white-space:nowrap; } .chunk.wide { flex:1 1 100%; font-size:14px; padding:9px 6px; border:1px solid #d97706; border-radius:6px; background:#fff; color:#7c2d12; cursor:pointer } .chunk.on { background:#f59e0b; color:#fff } .chunk.done { background:#fef3c7 } .chunk:hover { background:#fbbf24; color:#111 }
 .sections { margin:0; padding-left:20px; font-size:13px; columns:1 } .sections li { margin:1px 0 } .sections li a { color:#7c2d12; text-decoration:none } .sections li.past a::before { content:'✓ '; color:#16a34a } .sections li.cur a { color:#111; font-weight:700 } .sections li.cur a::before { content:'▶ ' } .sections li.todo a { color:#92400e; text-decoration:underline dotted } .tochelp { margin:6px 0 0; color:#7c2d12 }
 .nav { margin:0 0 10px; font-size:13px } .nav summary { cursor:pointer; font-weight:600; color:#92400e } .navchunk { margin:6px 0 } .navhead { font-weight:600; color:#7c2d12; margin:4px 0 2px } .nav ol { margin:0; padding-left:18px } .nav li { margin:1px 0; color:#999 } .nav li.past a { color:#92400e; text-decoration:none } .nav li.past a::before { content:'✓ '; color:#16a34a } .nav li.cur { color:#111; font-weight:700 } .nav li.cur a { color:#111; text-decoration:none }
 .notepad { display:flex; flex-direction:column; flex:1; min-height:0; background:#fff } .notebar { padding:6px 10px; border-bottom:1px solid #ddd; display:flex; gap:10px; align-items:center } .noteedit { flex:1; border:none; resize:none; padding:12px 16px; font:13px/1.5 Consolas, 'Courier New', monospace; outline:none }
@@ -2414,7 +2414,8 @@ Ray`, fresh: true }],
     return h(
       "div",
       { class: "toc" },
-      h("div", { class: "chunks" }, PHASES.map((ph) => h("button", { class: "chunk" + (ph === cur ? " on" : PHASES.indexOf(ph) < PHASES.indexOf(cur) ? " done" : ""), onclick: () => jumpChunk(ph), title: `Jump to ${PHASE_TITLES[ph]}` }, PHASE_TABS[ph]))),
+      h("div", { class: "chunks" }, PHASES.map((ph) => h("button", { class: "chunk" + (ph === "general" ? " wide" : "") + (ph === cur ? " on" : PHASES.indexOf(ph) < PHASES.indexOf(cur) ? " done" : ""), onclick: () => jumpChunk(ph), title: `Jump to ${PHASE_TITLES[ph]}` }, PHASE_TABS[ph]))),
+      // Ballast across the top, the three roles underneath
       h("ol", { class: "sections" }, steps.map((x, i) => ({ x, i })).filter(({ x }) => x.phase === cur).map(({ x, i }) => h("li", { class: i === st.step ? "cur" : i < st.step ? "past" : "todo" }, h("a", { href: "#", onclick: (e) => {
         e.preventDefault();
         jumpTo(i);
