@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Q6Yt648gR/2HOMRdCpOj//XpZ1TKcSi4H1LT2WURJ5o='; style-src 'sha256-lSO51X03vuL4I8XY1cyFiTe8lHVk1OqpTwhJtVcpAkM='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-bHCJVQsDOFgbVIF1x7UlEssj16evsWz0AuldIJDjklM='; style-src 'sha256-5IgXpE1+lLuLvsLlsrVP/mK7dmoWYB8xJ79kzLvTFq4='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast tutorial</title>
 <style>* { box-sizing:border-box } html, body { margin:0; height:100%; font:14px/1.4 "Segoe UI", Arial, sans-serif; overflow:hidden; background:#0b3d5c }
 .desk { position:absolute; inset:0; background:radial-gradient(ellipse at 30% 20%, #1e6a8f 0%, #0b3d5c 55%, #072a40 100%); overflow:hidden }
@@ -17,6 +17,8 @@
 .pane { flex:1; overflow:auto } .cols, .file { display:grid; grid-template-columns:1fr 160px 110px; padding:5px 12px; align-items:center } .cols { color:#888; font-size:12px; border-bottom:1px solid #eee; position:sticky; top:0; background:#fff }
 .file { cursor:default; user-select:none } .file:hover { background:#f3f6ff } .file.sel { background:#cfe0ff } .file.fresh > span:first-child { font-weight:700 } .empty { padding:30px; color:#999; text-align:center } .small { font-size:12px; color:#666 }
 .status { border-top:1px solid #eee; padding:4px 10px; font-size:12px; color:#666; display:flex; justify-content:space-between; align-items:center } .openwith { font:inherit; padding:3px 10px; border:1px solid #9ab; background:#eef; border-radius:4px; cursor:pointer }
+.mail { display:flex; flex:1; min-height:0; background:#fff } .maillist { width:220px; border-right:1px solid #eee; overflow:auto } .msg { padding:8px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer } .msg.fresh b { color:#1d4ed8 } .msg:hover { background:#f3f6ff } .mailbody { flex:1; padding:12px 18px; overflow:auto } .mailbody h3 { margin:0 0 4px } .attach { background:#f3f4f6; border:1px solid #ddd; border-radius:6px; padding:8px 10px; display:inline-flex; gap:8px; align-items:center }
+.chat { flex:1; min-height:0; overflow:auto; background:#e5ddd5; padding:12px } .bubble { background:#fff; border-radius:10px; padding:8px 12px; margin-bottom:10px; max-width:460px; box-shadow:0 1px 1px rgba(0,0,0,.1) } .bubble pre { font:12px/1.35 Consolas, 'Courier New', monospace; white-space:pre-wrap; max-height:220px; overflow:auto; margin:6px 0; background:#f7f7f7; padding:6px } .bubble.fresh b { color:#1d4ed8 }
 pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Consolas, 'Courier New', monospace; white-space:pre-wrap; background:#fff }
 .browser { display:flex; flex-direction:column; flex:1; min-height:0; background:#dee1e6 } .tabs { display:flex; align-items:flex-end; gap:4px; padding:6px 8px 0 } .tab { background:#fff; border-radius:8px 8px 0 0; padding:6px 14px; font-size:13px } .newtab { border:none; background:none; font-size:16px; cursor:pointer; padding:2px 8px }
 .urlbar { display:flex; gap:8px; align-items:center; background:#fff; padding:6px 10px; border-bottom:1px solid #ccc } .urlbar input { flex:1; border:1px solid #ddd; border-radius:14px; padding:4px 10px; background:#f1f3f4; font:inherit }
@@ -78,10 +80,12 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
   var armor_exports = {};
   __export(armor_exports, {
     armor: () => armor,
+    blocks: () => blocks,
+    bundle: () => bundle,
     dearmor: () => dearmor,
     sniff: () => sniff
   });
-  var KINDS, wrap76, armor, dearmor, sniff;
+  var KINDS, wrap76, armor, dearmor, blocks, bundle, sniff;
   var init_armor = __esm({
     "src/armor.js"() {
       init_bytes();
@@ -112,6 +116,8 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
         if (body.kind !== kind.toLowerCase()) throw new Error("armor kind does not match body");
         return { kind, headers, body };
       };
+      blocks = (s) => s.match(/-----BEGIN BALLAST ([A-Z]+)-----\r?\n[\s\S]*?-----END BALLAST \1-----/g) || [];
+      bundle = (texts) => texts.join("\n");
       sniff = (s) => (/-----BEGIN BALLAST ([A-Z]+)-----/.exec(s) || [])[1] || null;
     }
   });
@@ -224,13 +230,18 @@ ${by.sig}`;
 
   // tutorial/src/os.js
   var FOLDERS = ["Ballast", "Inbox", "Registrations", "Tests", "Releases", "Class profiles", "Outbox"];
-  var initial = (why = "") => ({ windows: [], files: [{ id: "ballast", folder: "Ballast", name: "ballast.html", text: "", from: "IT (saved from cror.ca/ballast)", at: Date.now() - 864e5 * 30, fresh: false }, { id: "why", folder: "Ballast", name: "Why Ballast.txt", text: why, from: "IT", at: Date.now() - 864e5 * 30, fresh: false, note: true }], cwd: "Ballast", z: 1, sel: null, toast: null, clock: "" });
+  var initial = (notes = {}) => ({ windows: [], files: [
+    { id: "ballast", folder: "Ballast", name: "ballast.html", text: "", from: "IT (saved from cror.ca/ballast)", at: Date.now() - 864e5 * 30, fresh: false },
+    ...Object.entries(notes).map(([name, text2], i) => ({ id: "note" + i, folder: "Ballast", name, text: text2, from: "IT", at: Date.now() - 864e5 * 30, fresh: false, note: true }))
+  ], mail: [], chat: [], cwd: "Ballast", z: 1, sel: null, toast: null, clock: "" });
+  var addMail = (s, m) => ({ ...s, mail: [...s.mail, { id: id(), at: Date.now(), ...m }], toast: `Mail from ${m.from}: ${m.subject}` });
+  var addChat = (s, m) => ({ ...s, chat: [...s.chat, { id: id(), at: Date.now(), ...m }], toast: `Message from ${m.from}` });
   var id = () => Math.random().toString(36).slice(2, 8);
   var openWindow = (s, kind, title, extra = {}) => {
     const existing = s.windows.find((w2) => w2.kind === kind);
     if (existing) return focus(s, existing.id);
     const n = s.windows.length;
-    const w = { id: id(), kind, title, x: 60 + n * 30, y: 40 + n * 24, w: kind === "browser" ? 980 : kind === "notepad" ? 640 : 720, h: kind === "browser" ? 700 : kind === "notepad" ? 560 : 460, z: s.z + 1, min: false, ...extra };
+    const w = { id: id(), kind, title, x: 60 + n * 30, y: 40 + n * 24, w: kind === "browser" ? 980 : kind === "notepad" ? 640 : kind === "chat" ? 520 : 720, h: kind === "browser" ? 700 : kind === "notepad" ? 560 : 460, z: s.z + 1, min: false, ...extra };
     return { ...s, windows: [...s.windows, w], z: s.z + 1 };
   };
   var setUrl = (s, wid, url, title) => ({ ...s, windows: s.windows.map((w) => w.id === wid ? { ...w, url, title } : w) });
@@ -246,6 +257,7 @@ ${by.sig}`;
   var cd = (s, folder) => ({ ...s, cwd: folder, sel: null });
   var toast = (s, msg) => ({ ...s, toast: msg });
   var ICON = { txt: "\u{1F4C4}", html: "\u{1F310}", folder: "\u{1F4C1}" };
+  var ICONW = { browser: "\u{1F310} ", notepad: "\u{1F4DD} ", mail: "\u{1F4E7} ", chat: "\u{1F4AC} ", explorer: "\u{1F5C4}\uFE0F " };
   var ext = (n) => (n.split(".").pop() || "").toLowerCase();
   var render = (root2, s, act2) => {
     const desktop = h(
@@ -257,7 +269,9 @@ ${by.sig}`;
         { class: "icons" },
         h("button", { class: "dicon", ondblclick: () => act2("open-explorer") }, "\u{1F5C4}\uFE0F", h("span", {}, "Shared drive")),
         h("button", { class: "dicon", ondblclick: () => act2("open-browser") }, "\u{1F310}", h("span", {}, "Browser")),
-        h("button", { class: "dicon", ondblclick: () => act2("open-file", "why") }, "\u{1F4DD}", h("span", {}, "Why Ballast.txt"))
+        h("button", { class: "dicon", ondblclick: () => act2("open-mail") }, "\u{1F4E7}", h("span", {}, "Mail"), s.mail.some((m) => m.fresh) ? h("span", { class: "badge" }, s.mail.filter((m) => m.fresh).length) : null),
+        h("button", { class: "dicon", ondblclick: () => act2("open-chat") }, "\u{1F4AC}", h("span", {}, "Messages"), s.chat.some((m) => m.fresh) ? h("span", { class: "badge" }, s.chat.filter((m) => m.fresh).length) : null),
+        s.files.filter((f) => f.note).map((f) => h("button", { class: "dicon", ondblclick: () => act2("open-file", f.id) }, "\u{1F4DD}", h("span", {}, f.name)))
       ),
       ...s.windows.filter((w) => !w.min).sort((a, b) => a.z - b.z).map((w) => win(w, s, act2)),
       s.toast ? h("div", { class: "toast" }, s.toast) : null,
@@ -265,7 +279,7 @@ ${by.sig}`;
         "div",
         { class: "taskbar" },
         h("button", { class: "start", onclick: () => act2("open-explorer") }, "\u229E"),
-        s.windows.map((w) => h("button", { class: "task", onclick: () => act2("focus", w.id) }, w.kind === "browser" ? "\u{1F310} " : w.kind === "notepad" ? "\u{1F4DD} " : "\u{1F5C4}\uFE0F ", w.title)),
+        s.windows.map((w) => h("button", { class: "task", onclick: () => act2("focus", w.id) }, ICONW[w.kind] || "\u{1F5C4}\uFE0F ", w.title)),
         h("span", { class: "clock" }, s.clock)
       )
     );
@@ -286,10 +300,10 @@ ${by.sig}`;
         window.addEventListener("pointermove", mv);
         window.addEventListener("pointerup", up);
       } },
-      h("span", {}, w.kind === "browser" ? "\u{1F310} " : w.kind === "notepad" ? "\u{1F4DD} " : "\u{1F5C4}\uFE0F ", w.title),
+      h("span", {}, ICONW[w.kind] || "\u{1F5C4}\uFE0F ", w.title),
       h("span", { class: "winbtns" }, h("button", { onclick: () => act2("minimize", w.id) }, "\u2013"), h("button", { onclick: () => act2("close", w.id) }, "\u2715"))
     );
-    const body = w.kind === "explorer" ? explorer(s, act2) : w.kind === "notepad" ? h("pre", { class: "note" }, w.text) : browser(w, s, act2);
+    const body = w.kind === "explorer" ? explorer(s, act2) : w.kind === "notepad" ? h("pre", { class: "note" }, w.text) : w.kind === "mail" ? mail(s, act2) : w.kind === "chat" ? chat(s, act2) : browser(w, s, act2);
     return h("div", { class: "win " + w.kind, style: { left: w.x + "px", top: w.y + "px", width: w.w + "px", height: w.h + "px", zIndex: w.z }, onclick: () => act2("focus", w.id) }, bar, body);
   };
   var explorer = (s, act2) => {
@@ -350,6 +364,17 @@ ${by.sig}`;
       Object.assign(f.style, { display: "block", left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px", zIndex: w.z });
     }
   };
+  var mail = (s, act2) => h(
+    "div",
+    { class: "mail" },
+    h("div", { class: "maillist" }, s.mail.length ? s.mail.map((m) => h("div", { class: "msg" + (m.fresh ? " fresh" : ""), onclick: () => act2("read-mail", m.id) }, h("b", {}, m.from), h("div", {}, m.subject), h("div", { class: "small" }, new Date(m.at).toLocaleTimeString()))) : h("div", { class: "empty" }, "No mail.")),
+    h("div", { class: "mailbody" }, (() => {
+      const m = s.mail.find((x) => x.id === s.readMail) || s.mail.at(-1);
+      if (!m) return null;
+      return [h("h3", {}, m.subject), h("div", { class: "small" }, `From: ${m.from}`), h("p", {}, m.body), m.attachment ? h("div", { class: "attach" }, "\u{1F4CE} ", m.attachment.name, " ", h("button", { class: "openwith", onclick: () => act2("open-text", m.attachment.text, m.attachment.name) }, "Open with Ballast")) : null];
+    })())
+  );
+  var chat = (s, act2) => h("div", { class: "chat" }, s.chat.length ? s.chat.map((m) => h("div", { class: "bubble" + (m.fresh ? " fresh" : "") }, h("b", {}, m.from), h("pre", {}, m.text), h("button", { class: "openwith", onclick: () => act2("open-text", m.text, `message from ${m.from}`) }, "Open this message with Ballast"))) : h("div", { class: "empty" }, "No messages."));
   var browser = (w, s, act2) => h(
     "div",
     { class: "browser" },
@@ -376,14 +401,11 @@ ${by.sig}`;
       "It is admittedly a bit silly, and it may go away later. Until then, the mapping is the only thing you need to hold in your head."
     ].join("\n\n")),
     { phase: "superintendent", title: "Why Ballast", text: 'Free. Simple. Serverless. Permissionless. No external dependencies. Runnable in 30 years \u2014 it should outlast some rails.\n\nOne HTML file; the browser you already have does the cryptography; the files are the network. The long form is on the desktop: open "Why Ballast.txt".', done: (st2) => st2.windows.some((w) => w.kind === "notepad") },
-    info("superintendent", "What an armored text file is", [
-      'Every Ballast file looks like this: a line "-----BEGIN BALLAST TEST-----", a few readable headers (title, who, when, a sha256), a blank line, then the body as base64 letters and digits, then "-----END BALLAST TEST-----". PGP has used the same idea since 1991.',
-      "The body is JSON \u2014 signed, and encrypted where it must be \u2014 but the envelope is plain text: it survives email, copy-and-paste, Teams, a shared drive, a printout, and the sha256 header catches any mangling. It is inert: a .txt cannot run, and Ballast never executes what it reads \u2014 text is parsed as data and drawn as text. Bytes can hide anywhere; they cannot run from here."
-    ].join("\n\n")),
+    { phase: "superintendent", title: "What an armored text file is", done: (st2) => st2.windows.some((w) => w.kind === "notepad" && /Armored/.test(w.title)), text: 'Ballast runs on armored text files \u2014 eight kinds, nothing else. Think of a GBO: a numbered page of plain text, transmitted by whatever means is at hand and repeated back to prove it was copied. An armored file is the same thing for a computer: a BEGIN line, readable headers, a body of letters and digits, an END line, and a sha256 as the repeat-back.\n\nThe long form, with an example, is on the desktop: open "Armored text.txt".' },
     { phase: "superintendent", title: "Register", text: "Everyone starts the same way. Register with a name, a PIN (any 6 digits) and, if you like, a photo. Ballast keeps your keys in this browser.", hint: ["form.card button[type=submit]", "Fill in name and PIN, then Register."], done: (st2) => st2.ballast.pub && st2.ballast.role !== void 0 && st2.ballast.screen && st2.ballast.role === "none" },
     { phase: "superintendent", title: "The first superintendent mints themself", text: 'Roles are granted by signature. Nobody is above the first superintendent, so they mint their own. Open "Nobody to mint me" and start as superintendent.', hint: ["details summary", "Open this and click Start as superintendent."], done: (st2) => st2.ballast.role === "superintendent" },
     { phase: "superintendent", title: "Start your book", text: "Your book holds the RTCs you mint, the tests you approve, and every class profile. It lives in a file under your passphrase. Start one.", hint: ["button.primary", "Start a book."], done: (st2) => st2.ballast.screen === "book" },
-    { phase: "superintendent", title: "Three RTCs want minting", text: "Three instructors have registered and sent you their registrations. They are in the shared drive, in Inbox. Open the shared drive, then open each registration with Ballast (double-click, or Open with Ballast).", arrive: "rtcRegistrations", explorer: "Inbox", done: (st2) => st2.pendingSeen >= 3 },
+    { phase: "superintendent", title: "Three RTCs want minting \u2014 three ways", text: "Three instructors have registered, and their registrations reached you three different ways, because armored text goes anywhere text goes. Denise emailed hers as an attachment (Mail, on the desktop). Ray's attachment got blocked, so he pasted the whole block into a chat message (Messages). Tom dropped his in the shared folder, Inbox. Open all three with Ballast \u2014 the attachment, the message body with Ray's note still around it, and the file. Ballast finds the block wherever it is.", arrive: "rtcRegistrations", explorer: "Inbox", done: (st2) => st2.pendingSeen >= 3 },
     { phase: "superintendent", title: "Mint them", text: "On the RTCs tab, mint each one. Each minted profile is a file you would send back to that instructor; here it lands in Outbox.", hint: [".tabs button:nth-child(3)", "The RTCs tab. Mint all three."], done: (st2) => st2.files.filter((f) => f.folder === "Outbox" && /^profile-RTC-/.test(f.name)).length >= 3 },
     { phase: "superintendent", title: "Tests arrive", text: "Two test sources arrived in Tests. Open them with Ballast; they go into your inventory. Then approve them \u2014 an approval is your signature over the source, and it travels with the test when an RTC issues it. It also lets every release under that test carry a copy sealed to you.", arrive: "testSources", explorer: "Tests", hint: [".tabs button:nth-child(2)", "Test inventory: drop the sources here and approve."], done: (st2) => st2.files.filter((f) => f.folder === "Outbox" && /^approval-/.test(f.name)).length >= 2 },
     info("superintendent", "Write one yourself", "You can also write a test on the book. The source is plain text: a title, settings, and items separated by --- lines. Paste the example, validate it, add it. (Optional \u2014 Next when you like.)", { hint: ['textarea[placeholder^="# Title"]', "Paste a source, Validate, Add to inventory."] }),
@@ -400,9 +422,9 @@ ${by.sig}`;
     { phase: "rtc", title: "You are an RTC", text: 'Start a sheet \u2014 your desk, under a passphrase. Then make a class: Crew tab, New class, call it "Block C".', hint: ["button.primary", "Start a sheet."], done: (st2) => st2.ballast.screen === "desk" },
     { phase: "rtc", title: "Registrations from crew", text: "Four crew members registered and sent their registrations to you. Open them from Inbox, then mint each one on the Crew tab and put them in your class.", arrive: "crewRegistrations", explorer: "Inbox", done: (st2) => st2.files.filter((f) => f.folder === "Outbox" && /^profile-crew-\d/.test(f.name)).length >= 4 },
     { phase: "rtc", title: "A test from the superintendent", text: "Test 2 arrived in Tests with its approval. Open both with Ballast. On Tests, set the window \u2014 when the clearance opens and closes; outside it the file will not decrypt \u2014 choose your class and Issue. One file goes to the whole class, with a clearance for each person. It lands in Outbox.", arrive: "testForClass", explorer: "Tests", done: (st2) => exported(st2, /\.test\.txt$/) },
-    { phase: "rtc", title: "Releases come back", text: "Your four crew wrote the test and released. Their releases are in Releases \u2014 open each with Ballast, then on Releases click Score. Each row shows the release hash and whether the crew member's signature checks.", arrive: "releases", explorer: "Releases", done: (st2) => st2.releasesSeen >= 4 },
+    { phase: "rtc", title: "Releases come back", text: "Your four crew wrote the test and released. Their releases are in Releases. Open them with Ballast \u2014 one at a time here, but in real life you would select them all and drag the lot onto the desk at once, or drop one bundle file. Then on Releases click Score. Each row shows the release hash and whether the crew member's signature checks.", arrive: "releases", explorer: "Releases", done: (st2) => st2.releasesSeen >= 4 },
     info("rtc", "Mark, rate, appraise", "One item is a short answer: open review for each person and mark it. On the Crew tab, give each person a rating and write an appraisal. Write what you actually observed; the superintendent will read it beside the numbers.", { hint: [".tabs button:nth-child(1)", "Crew tab: rating and appraisal per person."] }),
-    { phase: "rtc", title: "Cancel and file the class profile", text: 'On Releases: Cancel all sends each person their marks, signed by you and naming their release hash. Then "Class profile to \u2026" files the report with the superintendent \u2014 drop her profile from Inbox first if the button is missing. Save your sheet.', arrive: "supProfile", explorer: "Inbox", done: (st2) => exported(st2, /^class-profile-/) },
+    { phase: "rtc", title: "Cancel and file the class profile", text: `On Releases: Cancel all (export) writes every person's marks \u2014 signed by you, naming their release hash \u2014 into a folder you pick in a real browser, or as one file each plus one bundle of them all; here they land in Outbox. Then "Class profile to \u2026" files the report with the superintendent \u2014 drop her profile from Inbox first if the button is missing. Save your sheet.`, arrive: "supProfile", explorer: "Inbox", done: (st2) => exported(st2, /^class-profile-/) },
     { phase: "rtc", title: "Step down again", text: "Denise Okafor, one of the RTCs, has minted your registration as crew. Her profile for you is in Inbox. Open it and accept.", arrive: "demoteToCrew", explorer: "Inbox", done: (st2) => st2.ballast.role === "crew" },
     // ---------- crew
     info("crew", "What protects the test \u2014 and what cannot", [
@@ -1200,8 +1222,8 @@ ${by.sig}`;
   var KEYS = /* @__PURE__ */ new Set(["id", "type", "area", "ref", "lcr", "tags", "svg", "img", "alt", "worth"]);
   var parseTest = async (source) => {
     const errors = [];
-    const blocks = source.replace(/\r\n/g, "\n").split(/\n---+\n/);
-    const head = blocks.shift() || "";
+    const blocks2 = source.replace(/\r\n/g, "\n").split(/\n---+\n/);
+    const head = blocks2.shift() || "";
     const test = { title: "Untitled test", settings: { time: 3600, pass: 0.9, shuffleItems: true, shuffleOptions: true, allowBack: false }, areas: [], items: [] };
     for (const line of head.split("\n")) {
       const l = line.trim();
@@ -1231,7 +1253,7 @@ ${by.sig}`;
     }
     const areaIds = new Set(test.areas.map((a) => a.id));
     const seen2 = /* @__PURE__ */ new Set();
-    for (const [n, block] of blocks.entries()) {
+    for (const [n, block] of blocks2.entries()) {
       if (!block.trim()) continue;
       const item = { type: "mc", prompt: "", options: [], pairs: [], key: null, answer: "", ref: [], tags: [], img: [], worth: 1 };
       let mode = null;
@@ -1807,13 +1829,16 @@ ${hash}`));
   init_profile();
 
   // WHY.txt
-  var WHY_default = "WHY BALLAST\n\nFree. Simple. Serverless. Permissionless. No external dependencies.\nRunnable in 30 years. It should outlast some rails.\n\nFREE\nNo licence, no seat count, no renewal, no vendor to call. Copy the file\nand you have another installation.\n\nSIMPLE\nOne HTML file, about 120 KB, in plain JavaScript that a person can read\nend to end. Three roles, eight kinds of file, one job: issue a test,\nwrite it, mark it, prove the marks. Nothing is configured; nothing is\nadministered.\n\nSERVERLESS\nNothing runs anywhere except in the browser in front of you. There is no\naccount, no database, no service to keep up, no log on someone else's\nmachine. The files are the network: registrations, tests, releases and\nmarks are small text files that move however your files already move --\na shared drive, an email, a Teams message, a USB stick, paper.\n\nPERMISSIONLESS\nNo installer, no administrator rights, no open port, no firewall\nexception. It runs from a shared drive, from a website, or from a file on\na desktop. Nothing it does needs to be allowed by anyone, because nothing\nit does looks different from opening a web page and saving a text file.\nThe page's own policy forbids it from talking to the network at all.\n\nNO EXTERNAL DEPENDENCIES\nNo framework, no package, no CDN, no font server, no update channel. The\ncryptography is the browser's own WebCrypto -- the same AES-GCM, P-256,\nSHA-256, HKDF and PBKDF2 that TLS uses. Every file format is written down\nbyte by byte in SPEC.md, and verify.py re-scores a release in Python with\nno browser at all, so the app is never the only thing that can read its\nown files.\n\nRUNNABLE IN 30 YEARS\nBrowsers do not remove JavaScript features or WebCrypto algorithms; a\npage that runs today runs in the next version. There is nothing to\nexpire, nothing to renew, no company whose closing takes the software\nwith it. Text files stay readable by anything that reads text. The whole\nsystem is a file you can hash once, keep, and open in 2056.\n\nWHAT IT IS NOT\nIt is not a proctoring system. Once a question is on a screen it is\ncleartext for the person looking at it, and no software can stop them\nreading, remembering or photographing it. What Ballast does is keep the\nanswers out of the file, show one item at a time under fullscreen with\nthe keyboard locked, refuse copy and print, record every break, watermark\nevery frame with the writer's name, and sign everything that moves so\nthat a mark can always be traced back to the answers it was given for.\n";
+  var WHY_default = "WHY BALLAST\n\nFree. Simple. Serverless. Permissionless. No external dependencies.\nRunnable in 30 years. It should outlast some rails.\n\nFREE\nNo licence, no seat count, no renewal, no vendor to call. Copy the file\nand you have another installation.\n\nSIMPLE\nOne HTML file, about 120 KB, in plain JavaScript that a person can read\nend to end. Three roles, eight kinds of file, one job: issue a test,\nwrite it, mark it, prove the marks. Nothing is configured; nothing is\nadministered.\n\nSERVERLESS\nNothing runs anywhere except in the browser in front of you. There is no\naccount, no database, no service to keep up, no log on someone else's\nmachine. The files are the network: registrations, tests, releases and\nmarks are small text files that move however your files already move --\na shared drive, an email, a Teams message, a USB stick, paper.\n\nPERMISSIONLESS\nNo installer, no administrator rights, no open port, no firewall\nexception. It runs from a shared drive, from a website, or from a file on\na desktop. Nothing it does needs to be allowed by anyone, because nothing\nit does looks different from opening a web page and saving a text file.\nThe page's own policy forbids it from talking to the network at all.\n\nNO EXTERNAL DEPENDENCIES\nNo framework, no package, no CDN, no font server, no update channel. The\ncryptography is the browser's own WebCrypto -- the same AES-GCM, P-256,\nSHA-256, HKDF and PBKDF2 that TLS uses. Every file format is written down\nbyte by byte in SPEC.md, and verify.py re-scores a release in Python with\nno browser at all, so the app is never the only thing that can read its\nown files.\n\nRUNNABLE IN 30 YEARS\nBrowsers do not remove JavaScript features or WebCrypto algorithms; a\npage that runs today runs in the next version. There is nothing to\nexpire, nothing to renew, no company whose closing takes the software\nwith it. Text files stay readable by anything that reads text. The whole\nsystem is a file you can hash once, keep, and open in 2056.\n\nTHE MARK IS FOR YOUR ANSWERS\nWhen you release, your answers are sealed to the RTC and signed with your\nown key, and Ballast shows you the file's SHA-256 -- your receipt. The\ncancellation that comes back is signed by the RTC, names that hash, and\nrepeats your answers as marked, item by item. If the hash is not yours or\nthe signature is bad, the marks are not for what you released, and the\nsuperintendent who approved the test can re-score your release from a copy\nsealed to them, with no help from the RTC. Nobody can quietly change\neither side of the mark.\n\nNO NETWORK, NO LATENCY\nThere is no server to reach, so there is nothing to time out. The test is\na file already on your machine before you start; the clock is your\nmachine's; every answer is recorded locally the moment you give it; the\nrelease is written when you press the button, not when a request\ncompletes. A submission cannot be lost in transit, fail to post, or be\ncounted late because a page hung. If the building loses its network in\nthe last minute of a test, nothing happens.\n\nWHAT IT IS NOT\nIt is not a proctoring system. Once a question is on a screen it is\ncleartext for the person looking at it, and no software can stop them\nreading, remembering or photographing it. What Ballast does is keep the\nanswers out of the file, show one item at a time under fullscreen with\nthe keyboard locked, refuse copy and print, record every break, watermark\nevery frame with the writer's name, and sign everything that moves so\nthat a mark can always be traced back to the answers it was given for.\n";
+
+  // ARMOR.txt
+  var ARMOR_default = 'ARMORED TEXT FILES\n\nEverything Ballast sends or receives is an armored text file. Eight kinds:\nPROFILE, TEST, RELEASE, CANCEL, APPROVAL, REPORT, SHEET, BOOK. Ballast runs\non these; there is nothing else.\n\nIT IS A GBO\nA General Bulletin Order is a page of plain text. It has a number, it says\nwho it is to, it is transmitted by whatever means is at hand -- read over\nthe radio, printed at the terminal, handed across a desk -- and the crew\nrepeats it back to prove they copied it correctly. The medium never\nmatters. The words do.\n\nAn armored text file is the same idea for a computer. It is a block of\nplain text with a beginning line and an ending line, a few readable\nheaders, and a body that is only letters, digits, + / and =. It can be\ntransmitted by whatever means is at hand, and it carries its own\nrepeat-back: a sha256 in the header that the receiver recomputes.\n\nWHAT ONE LOOKS LIKE\n\n  -----BEGIN BALLAST CANCEL-----\n  version: 1\n  title: Test 1 - Definitions and signals\n  train: Crew 123456\n  grade: 91%\n  release: 4c1f0a9e2b7d3e10\n  sha256: 9a0b...e3c1\n\n  eyJ2IjoxLCJraW5kIjoiY2FuY2VsIiwidGVzdCI6Ilh...\n  -----END BALLAST CANCEL-----\n\nThe headers are for people: anyone can see what it is, who it is for and\nwhether it arrived intact, without opening it. The body is the file\nproper -- JSON, signed, and encrypted where it must be -- written out as\nbase64 so that nothing between sender and receiver can mangle it.\n\nWHY IT IS GOOD\n- It goes anywhere text goes: an email attachment, an email body, a chat\n  message, a shared folder, a USB stick, a printout, a photograph of a\n  printout. Ballast finds the block inside whatever surrounds it, so a\n  file pasted into the middle of an email still opens.\n- It survives everything that breaks binary files: mail gateways, line\n  ending changes, copy and paste, "smart" quotes, being typed back in.\n- It is inert. A text file cannot run, and Ballast never executes what it\n  reads; the text is parsed as data and drawn as text.\n- It is auditable. IT can read every header of every file with any text\n  editor, and hash the file, without being able to read the test inside.\n- It is durable. Text is the one format that will still open in 2056.\n\nWHAT THE ENVELOPE DOES NOT DO\nThe envelope does not keep secrets; the body does. A TEST body holds\nevery item encrypted under its own key; a RELEASE is sealed to one RTC\nand signed by one crew member; a CANCEL is sealed to one crew member and\nsigned by the RTC. Copy an armored file to a hundred people and only the\nones it was sealed to can open it, and the sha256 tells everyone else\nthat it was not touched.\n';
 
   // tutorial/src/main.js
   var APP = new URLSearchParams(location.search).get("app") || "../ballast/index.html";
   var root = document.getElementById("desk");
   var coachEl = document.getElementById("coach");
-  var st = { ...initial(WHY_default), ballast: { screen: "", role: void 0, pub: null, pin: null, minted: false }, step: 0, pendingSeen: 0, reportsSeen: 0, releasesSeen: 0, arrived: {}, issued: null, userReg: null };
+  var st = { ...initial({ "Why Ballast.txt": WHY_default, "Armored text.txt": ARMOR_default }), ballast: { screen: "", role: void 0, pub: null, pin: null, minted: false }, step: 0, pendingSeen: 0, reportsSeen: 0, releasesSeen: 0, arrived: {}, issued: null, userReg: null };
   var set = (next2) => {
     st = next2;
     render2();
@@ -1821,7 +1846,17 @@ ${hash}`));
   var frame = () => document.querySelector("iframe.app");
   var tell = (msg) => frame()?.contentWindow?.postMessage({ ballast: 1, ...msg }, "*");
   var arrivals = {
-    rtcRegistrations: async () => (await registrationsOf(await Promise.all([0, 1, 2].map(rtc)))).map((f) => ["Inbox", f]),
+    rtcRegistrations: async () => {
+      const [d, r, t] = await registrationsOf(await Promise.all([0, 1, 2].map(rtc)));
+      return [
+        ["mail", { from: d.from, subject: "Registration for the fall program", body: "Hi \u2014 my registration is attached. Looking forward to it. \u2014 Denise", attachment: { name: d.name, text: d.text }, fresh: true }],
+        ["chat", { from: r.from, text: `Hey, pasting my registration in here, the attachment got blocked by the mail filter:
+
+${r.text}
+Ray`, fresh: true }],
+        ["Inbox", t]
+      ];
+    },
     testSources: async () => tests.slice(0, 2).map((t) => ["Tests", { name: t.name, text: t.source, from: "Operating Practices" }]),
     classProfiles: async () => (await classProfilesFor(st.ballast.pub, await userApproval())).map((f) => ["Class profiles", f]),
     appeal: async () => [["Inbox", await appealFor(await userApproval())]],
@@ -1867,11 +1902,15 @@ ${hash}`));
       return [];
     });
     let s = st;
-    for (const [folder, f] of items) s = addFile(s, folder, f.name, f.text, f.from);
+    for (const [folder, f] of items) s = folder === "mail" ? addMail(s, f) : folder === "chat" ? addChat(s, f) : addFile(s, folder, f.name, f.text, f.from);
     set(items.length ? toast(s, `${items.length} file(s) arrived in ${items[0][0]}`) : s);
   };
   var act = async (kind, ...a) => {
     if (kind === "open-explorer") return set(openWindow(st, "explorer", "WNR-TRAINING \u2014 Training"));
+    if (kind === "open-mail") return set(openWindow(st, "mail", "Mail \u2014 Inbox"));
+    if (kind === "open-chat") return set(openWindow(st, "chat", "Messages"));
+    if (kind === "read-mail") return set({ ...st, readMail: a[0], mail: st.mail.map((m) => m.id === a[0] ? { ...m, fresh: false } : m) });
+    if (kind === "open-text") return openWithBallast(st, a[0], a[1]);
     if (kind === "open-browser") return set(openWindow(st, "browser", "Ballast \u2014 cror.ca", { src: APP + "?embedded=1", url: "https://cror.ca/ballast/" }));
     if (kind === "focus") {
       const top = st.windows.reduce((t, w) => w.z > (t?.z ?? -1) ? w : t, null);
@@ -1889,7 +1928,7 @@ ${hash}`));
       let s = seen(st, f.id);
       if (f.note) {
         const n = s.windows.find((w) => w.kind === "notepad");
-        return set(n ? focus(s, n.id) : openWindow(s, "notepad", f.name, { text: f.text }));
+        return set(n ? focus({ ...s, windows: s.windows.map((w) => w.id === n.id ? { ...w, title: f.name, text: f.text } : w) }, n.id) : openWindow(s, "notepad", f.name, { text: f.text }));
       }
       if (/\.html$/.test(f.name)) {
         const url = "file://///WNR-TRAINING/Training/Ballast/ballast.html";
@@ -1897,15 +1936,20 @@ ${hash}`));
         s = b ? focus(setUrl(s, b.id, url, "Ballast \u2014 ballast.html"), b.id) : openWindow(s, "browser", "Ballast \u2014 ballast.html", { src: APP + "?embedded=1", url });
         return set(toast(s, "Opened ballast.html from the shared drive. (In this tutorial the file:// copy and cror.ca are the same page; in real life each keeps its own keys \u2014 pick one and stay with it.)"));
       }
-      if (!s.windows.some((w) => w.kind === "browser")) s = openWindow(s, "browser", "Ballast \u2014 cror.ca", { src: APP + "?embedded=1" });
-      set(s);
-      const bid = s.windows.find((w) => w.kind === "browser").id;
-      setTimeout(() => set(focus(st, bid)), 0);
-      setTimeout(() => tell({ type: "open", text: f.text, name: f.name }), 150);
-      if (/^registration-/.test(f.name)) set({ ...st, pendingSeen: st.pendingSeen + 1 });
-      if (/^class-profile-/.test(f.name)) set({ ...st, reportsSeen: st.reportsSeen + 1 });
-      if (/^release-/.test(f.name)) set({ ...st, releasesSeen: st.releasesSeen + 1, appealSeen: st.appealSeen || f.folder === "Inbox" });
+      openWithBallast(s, f.text, f.name, f.folder);
     }
+  };
+  var openWithBallast = (s, text2, name, folder = "") => {
+    if (!s.windows.some((w) => w.kind === "browser")) s = openWindow(s, "browser", "Ballast \u2014 cror.ca", { src: APP + "?embedded=1", url: "https://cror.ca/ballast/" });
+    s = { ...s, chat: s.chat.map((m) => m.text === text2 ? { ...m, fresh: false } : m) };
+    set(s);
+    const bid = s.windows.find((w) => w.kind === "browser").id;
+    setTimeout(() => set(focus(st, bid)), 0);
+    setTimeout(() => tell({ type: "open", text: text2, name }), 150);
+    const reg = /^registration-/.test(name) || /BEGIN BALLAST PROFILE/.test(text2) && /role: none/.test(text2);
+    if (reg) set({ ...st, pendingSeen: st.pendingSeen + 1 });
+    if (/^class-profile-/.test(name)) set({ ...st, reportsSeen: st.reportsSeen + 1 });
+    if (/^release-/.test(name)) set({ ...st, releasesSeen: st.releasesSeen + 1, appealSeen: st.appealSeen || folder === "Inbox" });
   };
   window.addEventListener("message", async (e) => {
     const m = e.data;

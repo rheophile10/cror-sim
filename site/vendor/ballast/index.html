@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-pbhgaqC579Gk9jdgrLuk4r3f0y/gv83LEPueX7Jd9NU='; style-src 'sha256-Q90MJz/2OtBLKahp93sMfOp082FYHwaIKnYqY0UiIIw='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-EC8v+uHjl3juLkBVXrte0+40bCorD9/JEouUAIVVIjs='; style-src 'sha256-Q90MJz/2OtBLKahp93sMfOp082FYHwaIKnYqY0UiIIw='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast</title>
 <style>:root { --ink:#111; --bg:#fff; --mute:#666; --line:#ddd; --accent:#1d4ed8; --good:#15803d; --bad:#b91c1c; }
 * { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 Arial, sans-serif; -webkit-user-select:none; user-select:none }
@@ -182,6 +182,8 @@ nav.top { padding:8px 16px; font-size:14px; color:var(--mute) } nav.top a { colo
     if (body.kind !== kind.toLowerCase()) throw new Error("armor kind does not match body");
     return { kind, headers, body };
   };
+  var blocks = (s) => s.match(/-----BEGIN BALLAST ([A-Z]+)-----\r?\n[\s\S]*?-----END BALLAST \1-----/g) || [];
+  var bundle = (texts) => texts.join("\n");
   var sniff = (s) => (/-----BEGIN BALLAST ([A-Z]+)-----/.exec(s) || [])[1] || null;
 
   // src/profile.js
@@ -342,8 +344,8 @@ ${until}`
   var KEYS = /* @__PURE__ */ new Set(["id", "type", "area", "ref", "lcr", "tags", "svg", "img", "alt", "worth"]);
   var parseTest = async (source) => {
     const errors = [];
-    const blocks = source.replace(/\r\n/g, "\n").split(/\n---+\n/);
-    const head = blocks.shift() || "";
+    const blocks2 = source.replace(/\r\n/g, "\n").split(/\n---+\n/);
+    const head = blocks2.shift() || "";
     const test = { title: "Untitled test", settings: { time: 3600, pass: 0.9, shuffleItems: true, shuffleOptions: true, allowBack: false }, areas: [], items: [] };
     for (const line of head.split("\n")) {
       const l = line.trim();
@@ -373,7 +375,7 @@ ${until}`
     }
     const areaIds = new Set(test.areas.map((a) => a.id));
     const seen = /* @__PURE__ */ new Set();
-    for (const [n, block] of blocks.entries()) {
+    for (const [n, block] of blocks2.entries()) {
       if (!block.trim()) continue;
       const item = { type: "mc", prompt: "", options: [], pairs: [], key: null, answer: "", ref: [], tags: [], img: [], worth: 1 };
       let mode = null;
@@ -1454,11 +1456,32 @@ ${approval.hash}`));
       if (/\.(png|jpe?g|gif|webp)$/i.test(f.name)) items.push({ name: f.name, asset: f });
       else {
         const text2 = await readFileText(f);
-        items.push(sniff(text2) ? { name: f.name, text: text2 } : { name: f.name, text: text2, source: true });
+        const bs = blocks(text2);
+        if (bs.length > 1) bs.forEach((b, i) => items.push({ name: `${f.name} #${i + 1}`, text: b }));
+        else items.push(sniff(text2) ? { name: f.name, text: text2 } : { name: f.name, text: text2, source: true });
       }
     }
     await intake(items);
     rerender();
+  };
+  var exportAll = async (files, bundleName) => {
+    if (typeof window.showDirectoryPicker === "function" && !embedded()) {
+      try {
+        const dir = await window.showDirectoryPicker({ mode: "readwrite" });
+        for (const [name, text2] of files) {
+          const fh = await dir.getFileHandle(name, { create: true });
+          const w = await fh.createWritable();
+          await w.write(text2);
+          await w.close();
+        }
+        return note(`${files.length} files written to the folder`);
+      } catch (e) {
+        if (e.name === "AbortError") return;
+      }
+    }
+    for (const [name, text2] of files) download(name, text2);
+    if (bundleName) download(bundleName, bundle(files.map(([, t]) => t)));
+    note(`${files.length} files downloaded${bundleName ? " \u2014 and one bundle of them all" : ""}`);
   };
   var mint = async (reg) => {
     const m = await mintProfile(sheet.rtc, reg, "crew");
@@ -1509,6 +1532,12 @@ ${approval.hash}`));
     "div",
     {},
     classBar(),
+    sheet.trains.length ? h("button", { onclick: async () => {
+      const files = [];
+      for (const t of sheet.trains) files.push([`profile-crew-${t.pin}.txt`, await profileText(t)]);
+      await exportAll(files);
+      rerender();
+    } }, "Export all minted profiles") : null,
     sheet.pending.length ? h("div", { class: "card" }, h("h2", {}, "Registrations to mint"), h("table", {}, sheet.pending.map((r) => h("tr", {}, h("td", {}, avatar(r, 48)), h("td", {}, r.name), h("td", {}, r.pin), h("td", {}, h("button", { class: "primary", onclick: () => mint(r) }, "Mint as crew"), " ", h("button", { onclick: () => {
       sheet.pending = sheet.pending.filter((x) => x !== r);
       rerender();
@@ -1649,8 +1678,11 @@ ${approval.hash}`));
         "div",
         { class: "row" },
         h("button", { onclick: async () => {
-          for (const { r, s } of scored) download(`cancel-${r.pin}.txt`, await cancel(rec, r, s));
-        } }, "Cancel all"),
+          const files = [];
+          for (const { r, s } of scored) files.push([`cancel-${r.pin}.txt`, await cancel(rec, r, s)]);
+          await exportAll(files, `cancellations-${rec.title.replace(/\W+/g, "-")}.txt`);
+          rerender();
+        } }, "Cancel all (export)"),
         h("button", { onclick: () => download(`${rec.title.replace(/\W+/g, "-")}-summary.csv`, csv(test, scored)) }, "Summary CSV"),
         sheet.superintendent ? h("button", { onclick: async () => download(`class-profile-${rec.title.replace(/\W+/g, "-")}.txt`, await sendReport(sheet.rtc, sheet.superintendent.pub, reportFor(rec, test, scored, sum))) }, `Class profile to ${sheet.superintendent.name}`) : h("span", { class: "small" }, "Drop the superintendent's profile on the desk to send reports.")
       ),
@@ -1912,7 +1944,12 @@ ${approval.hash}`));
   };
   var takeFiles2 = async (files) => {
     const items = [];
-    for (const f of files) items.push({ name: f.name, text: await readFileText(f) });
+    for (const f of files) {
+      const text2 = await readFileText(f);
+      const bs = blocks(text2);
+      if (bs.length > 1) bs.forEach((b, i) => items.push({ name: `${f.name} #${i + 1}`, text: b }));
+      else items.push({ name: f.name, text: text2 });
+    }
     await intake2(items);
     rerender2();
   };
@@ -2141,8 +2178,14 @@ ${approval.hash}`));
     await set("profile", { ...p, role: m.role, name: m.name, photo: m.photo || p.photo, minted: m.minted });
   };
   var openText = async (text2, name = "") => {
-    const kind = sniff(text2);
     const p = await me2();
+    const bs = blocks(text2);
+    if (bs.length > 1 && p?.role === "crew") {
+      const mine = bs.find((b) => new RegExp(`^train: Crew ${p.pin}$`, "m").test(b)) || bs.find((b) => /BEGIN BALLAST TEST/.test(b));
+      if (!mine) return go3({ screen: "home", error: `${bs.length} files in one; none is addressed to Crew ${p.pin}` });
+      text2 = mine;
+    } else if (bs.length > 1 && p) return go3({ screen: p.role === "superintendent" ? "super" : "rtc", incoming: bs.map((b, i) => ({ name: `${name || "bundle"} #${i + 1}`, text: b })) });
+    const kind = sniff(text2);
     try {
       if (kind === "PROFILE" && p && (p.role === "none" || !p.minted)) {
         await acceptMint(text2);
