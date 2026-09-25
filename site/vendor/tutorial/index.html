@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-bHCJVQsDOFgbVIF1x7UlEssj16evsWz0AuldIJDjklM='; style-src 'sha256-5IgXpE1+lLuLvsLlsrVP/mK7dmoWYB8xJ79kzLvTFq4='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-vAFQ7GusuxLhme355r78pGqmMg/lmdz469fuMiClhZY='; style-src 'sha256-I2JYYkK2zdnnCoamNX0mZ2WrIt+z7qDmgaeZiazbFps='; frame-src 'self' file:; img-src blob: data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <title>Ballast tutorial</title>
 <style>* { box-sizing:border-box } html, body { margin:0; height:100%; font:14px/1.4 "Segoe UI", Arial, sans-serif; overflow:hidden; background:#0b3d5c }
 .desk { position:absolute; inset:0; background:radial-gradient(ellipse at 30% 20%, #1e6a8f 0%, #0b3d5c 55%, #072a40 100%); overflow:hidden }
 .banner { position:absolute; top:0; left:0; right:0; background:rgba(0,0,0,.55); color:#ffd166; font-size:12px; padding:4px 12px; text-align:center; z-index:5 }
-.icons { position:absolute; left:16px; top:36px; display:flex; flex-direction:column; gap:14px } .dicon { width:84px; background:none; border:none; color:#fff; font-size:32px; cursor:pointer; text-align:center } .dicon span { display:block; font-size:12px; text-shadow:0 1px 3px #000 }
+.icons { position:absolute; left:340px; top:36px; display:flex; flex-direction:column; gap:14px } .dicon { width:84px; background:none; border:none; color:#fff; font-size:32px; cursor:pointer; text-align:center } .dicon span { display:block; font-size:12px; text-shadow:0 1px 3px #000 }
 .win { position:absolute; background:#fff; border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.45); display:flex; flex-direction:column; overflow:hidden; border:1px solid #9ab }
 .titlebar { display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#f3f3f3; border-bottom:1px solid #ddd; cursor:move; user-select:none; font-weight:600 } .winbtns button { border:none; background:none; font-size:14px; padding:2px 8px; cursor:pointer } .winbtns button:hover { background:#e5e5e5 }
 .explorer { display:flex; flex-direction:column; flex:1; min-height:0 } .addr { padding:6px 10px; background:#fafafa; border-bottom:1px solid #eee } .crumb { background:#fff; border:1px solid #ddd; padding:1px 6px; border-radius:4px }
@@ -24,9 +24,9 @@ pre.note { flex:1; margin:0; padding:16px 20px; overflow:auto; font:13px/1.5 Con
 .urlbar { display:flex; gap:8px; align-items:center; background:#fff; padding:6px 10px; border-bottom:1px solid #ccc } .urlbar input { flex:1; border:1px solid #ddd; border-radius:14px; padding:4px 10px; background:#f1f3f4; font:inherit }
 #frames iframe.app { position:fixed; border:none; background:#fff; display:none } .appslot { flex:1; background:#fff }
 .taskbar { position:absolute; left:0; right:0; bottom:0; height:40px; background:rgba(20,30,40,.92); display:flex; align-items:center; gap:6px; padding:0 8px; color:#fff } .start { font-size:18px; background:none; border:none; color:#fff; padding:4px 10px; cursor:pointer } .task { background:rgba(255,255,255,.12); border:none; color:#fff; padding:6px 12px; border-radius:4px; cursor:pointer } .clock { margin-left:auto; font-variant-numeric:tabular-nums; padding-right:8px }
-.toast { position:absolute; right:340px; bottom:52px; background:#111; color:#fff; padding:10px 14px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.4); z-index:9 }
+.toast { position:absolute; right:16px; bottom:52px; background:#111; color:#fff; padding:10px 14px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.4); z-index:9 }
 /* coach */
-.coach { position:absolute; right:0; top:22px; bottom:40px; width:320px; background:#fff7ed; border-left:3px solid #f59e0b; padding:14px 16px; overflow:auto; z-index:6; box-shadow:-6px 0 20px rgba(0,0,0,.25) }
+.coach { position:absolute; left:0; top:22px; bottom:40px; width:320px; background:#fff7ed; border-right:3px solid #f59e0b; padding:14px 16px; overflow:auto; z-index:6; box-shadow:6px 0 20px rgba(0,0,0,.25) }
 .coach h2 { margin:0 0 4px; font-size:16px } .coach .phase { font-size:11px; color:#92400e; text-transform:uppercase; letter-spacing:.06em } .coach p { margin:8px 0 } .coach .btns { display:flex; gap:8px; margin-top:12px } .coach button { font:inherit; padding:6px 12px; border:1px solid #f59e0b; border-radius:6px; background:#fff; cursor:pointer } .coach button.primary { background:#f59e0b; color:#fff } .coach button:disabled { opacity:.4; cursor:default }
 .coach .progress { height:6px; background:#fde68a; border-radius:3px; margin:8px 0 } .coach .progress div { height:100%; background:#f59e0b; border-radius:3px }
 .coach .waiting { color:#92400e; font-style:italic } .coach ul { padding-left:18px; margin:6px 0 } .coach .done { color:#6b7280; text-decoration:line-through }
@@ -241,7 +241,7 @@ ${by.sig}`;
     const existing = s.windows.find((w2) => w2.kind === kind);
     if (existing) return focus(s, existing.id);
     const n = s.windows.length;
-    const w = { id: id(), kind, title, x: 60 + n * 30, y: 40 + n * 24, w: kind === "browser" ? 980 : kind === "notepad" ? 640 : kind === "chat" ? 520 : 720, h: kind === "browser" ? 700 : kind === "notepad" ? 560 : 460, z: s.z + 1, min: false, ...extra };
+    const w = { id: id(), kind, title, x: 440 + n * 30, y: 40 + n * 24, w: kind === "browser" ? 980 : kind === "notepad" ? 640 : kind === "chat" ? 520 : 720, h: kind === "browser" ? 700 : kind === "notepad" ? 560 : 460, z: s.z + 1, min: false, ...extra };
     return { ...s, windows: [...s.windows, w], z: s.z + 1 };
   };
   var setUrl = (s, wid, url, title) => ({ ...s, windows: s.windows.map((w) => w.id === wid ? { ...w, url, title } : w) });
@@ -390,12 +390,7 @@ ${by.sig}`;
   var PHASES = ["superintendent", "rtc", "crew"];
   var steps = [
     // ---------- superintendent
-    { phase: "superintendent", title: "Welcome", text: "You are about to run a training program end to end: first as the superintendent, then as an RTC, then as crew. The desktop, the shared drive and the browser are pretend; Ballast, inside the browser, is real.\n\nThere are two ways to run Ballast. The recommended one: a saved copy, ballast.html, on the shared drive \u2014 IT put one there. Open the shared drive, go to the Ballast folder, and open ballast.html. (The Browser icon on the desktop is the other way: cror.ca/ballast.)", done: (st2) => st2.windows.some((w) => w.kind === "browser") },
-    info("superintendent", "Shared drive or cror.ca?", [
-      "Both open the same page. From cror.ca you always get the latest version and nothing to keep \u2014 but you depend on the site being reachable, and a website can change under you. From ballast.html on the shared drive you run a fixed file: IT can hash it once and audit it, it works with no internet, every crew member runs byte-identical code, and it will be the same file in thirty years. That is the recommended way.",
-      `Getting it is the whole install: go to cror.ca/ballast, press Ctrl+S, choose "Webpage, HTML only", save it as ballast.html on the shared drive. It is one file with nothing else to fetch. (Ballast's top bar also has a Save a copy link that does the same.)`,
-      "One thing to know: a browser keeps keys per address, so the cror.ca page and the file:// page each have their own registration. Pick one and stay with it. Here in the tutorial they are the same page."
-    ].join("\n\n")),
+    { phase: "superintendent", title: "Welcome", text: 'You are about to run a training program end to end: first as the superintendent, then as an RTC, then as crew. The desktop, the shared drive, the mail and the browser are pretend; Ballast, inside the browser, is real.\n\nBallast is a serverless HTML file. You can run it from cror.ca/ballast, or download a copy of your own (Ctrl+S, "Webpage, HTML only") and run it from a file \u2014 a shared drive, a USB stick, your desktop. The recommended way is your own copy: a fixed file IT can hash once, that needs no internet and will be the same file in thirty years. One thing to know: a browser keeps keys per address, so the cror.ca page and the file are two separate registrations \u2014 pick one and stay with it.\n\nOpen either one to go on: the Browser on the desktop (cror.ca), or ballast.html in the Ballast folder of the shared drive (a saved copy).', done: (st2) => st2.windows.some((w) => w.kind === "browser") },
     info("superintendent", "The railroad metaphor", [
       "Ballast borrows its words from the CROR. The superintendent is the program director: approves tests, reads class profiles, settles appeals. The RTC (rail traffic controller) is the teacher: mints crew, issues tests, marks, files class profiles. Crew are the students. A test is issued to a class the way a clearance is issued to a train \u2014 one file, a clearance for each person, repeated back before it takes effect \u2014 and a finished attempt is a release. The marks come back as a cancellation. The RTC's working file is a sheet; the superintendent's is a book.",
       "It is admittedly a bit silly, and it may go away later. Until then, the mapping is the only thing you need to hold in your head."
