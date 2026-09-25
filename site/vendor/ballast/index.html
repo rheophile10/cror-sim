@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-CAx3Y6CvAlGzB842rlSkWDI0lI4UpXE/ikyH5x1pioU='; style-src 'sha256-vnSwBDqyVXlgF8G9s4+JAA5Lg0oZfTrlcn46tWyy0ks='; img-src blob: data:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<title>Ballast</title>
+<style>:root { --ink:#111; --bg:#fff; --mute:#666; --line:#ddd; --accent:#1d4ed8; --good:#15803d; --bad:#b91c1c; }
+* { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 Arial, sans-serif; -webkit-user-select:none; user-select:none }
+main { max-width:960px; margin:0 auto; padding:24px 16px }
+h1 { font-size:26px; margin:0 0 12px } h2 { font-size:19px; margin:20px 0 8px }
+.card { border:1px solid var(--line); border-radius:10px; padding:16px; margin:12px 0 }
+.row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:10px 0 }
+button, .btn { font:inherit; padding:8px 14px; border:1px solid var(--line); border-radius:8px; background:#f7f7f7; cursor:pointer }
+button.primary { background:var(--accent); color:#fff; border-color:var(--accent) }
+input, textarea, select { font:inherit; padding:8px; border:1px solid var(--line); border-radius:8px; width:100%; max-width:520px; -webkit-user-select:text; user-select:text }
+label { display:block; margin:8px 0 } label input { margin-top:4px }
+textarea[readonly] { font-family:monospace; font-size:12px }
+.status { color:var(--mute); min-height:1.4em } .bad { color:var(--bad) } .good { color:var(--good) } .big { font-size:24px } .small { font-size:13px; color:var(--mute) }
+.complete { font-family:monospace; font-size:20px; letter-spacing:.06em }
+.drop { border:2px dashed var(--line); border-radius:12px; padding:36px; text-align:center; color:var(--mute) } .drop.over { border-color:var(--accent); color:var(--accent) }
+.bar { position:sticky; top:0; display:flex; justify-content:space-between; padding:8px 12px; background:#111; color:#fff; font-weight:bold } .timer { font-family:monospace; font-size:20px }
+.work { padding:12px } .work canvas { width:100%; max-width:900px; display:block; border:1px solid var(--line); border-radius:8px; outline:none }
+.guard, .overlay { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; z-index:9 } .guard .card { background:#fff; max-width:480px } .overlay canvas { max-width:95vw; max-height:95vh }
+table { border-collapse:collapse; width:100% } td, th { padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top } th { color:var(--mute); font-weight:normal }
+.meter { height:10px; background:#eee; border-radius:5px; width:160px } .meter div { height:100%; background:var(--good); border-radius:5px }
+.tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin:12px 0 } .tabs button { border:none; border-radius:8px 8px 0 0; background:none } .tabs button.on { background:#eef2ff; color:var(--accent); font-weight:bold }
+@media print { html { display:none !important } }
+</style>
+</head>
+<body>
+<main></main>
+<script>(() => {
+  // src/app/h.js
+  var h = (tag, attrs = {}, ...children) => {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else if (k === "class") el.className = v;
+      else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+      else if (k === "value" || k in el && typeof v !== "string") el[k] = v;
+      else el.setAttribute(k, String(v));
+    }
+    for (const c of children.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    return el;
+  };
+  var mount = (root3, ...nodes) => {
+    root3.replaceChildren(...nodes.flat(Infinity).filter(Boolean));
+    return root3;
+  };
+  var download = (name, content, type = "text/plain") => {
+    const url = URL.createObjectURL(content instanceof Blob ? content : new Blob([content], { type }));
+    const a = h("a", { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5e3);
+  };
+  var readFileText = (file) => file.text();
+  var readFileBytes = async (file) => new Uint8Array(await file.arrayBuffer());
+  var fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  var hhmm = (d = /* @__PURE__ */ new Date()) => `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+
+  // src/bytes.js
+  var utf8 = (s) => new TextEncoder().encode(s);
+  var text = (b) => new TextDecoder().decode(b);
+  var B64 = typeof btoa === "function" ? { enc: (bin) => btoa(bin), dec: (s) => atob(s) } : { enc: (bin) => Buffer.from(bin, "binary").toString("base64"), dec: (s) => Buffer.from(s, "base64").toString("binary") };
+  var b64 = (bytes) => B64.enc(Array.from(bytes, (c) => String.fromCharCode(c)).join(""));
+  var unb64 = (s) => Uint8Array.from(B64.dec(s.replace(/\s+/g, "")), (c) => c.charCodeAt(0));
+  var b64url = (bytes) => b64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  var unb64url = (s) => {
+    const t = s.replace(/-/g, "+").replace(/_/g, "/");
+    return unb64(t + "=".repeat((4 - t.length % 4) % 4));
+  };
+  var hex = (bytes) => Array.from(bytes, (c) => c.toString(16).padStart(2, "0")).join("");
+  var concat = (...parts) => {
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let o = 0;
+    for (const p of parts) {
+      out.set(p, o);
+      o += p.length;
+    }
+    return out;
+  };
+  var random = (n) => crypto.getRandomValues(new Uint8Array(n));
+  var sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+
+  // src/armor.js
+  var KINDS = ["CREW", "TGBO", "RELEASE", "CANCEL", "SHEET"];
+  var wrap76 = (s) => s.replace(/(.{76})/g, "$1\n").trim();
+  var armor = async (kind, body, headers = {}) => {
+    const bytes = utf8(JSON.stringify(body));
+    const lines = [`-----BEGIN BALLAST ${kind}-----`, "version: 1"];
+    for (const [k, v] of Object.entries(headers)) lines.push(`${k}: ${v}`);
+    lines.push(`sha256: ${hex(await sha256(bytes))}`, "", wrap76(b64(bytes)), `-----END BALLAST ${kind}-----`, "");
+    return lines.join("\n");
+  };
+  var dearmor = async (s, expectKind) => {
+    const m = /-----BEGIN BALLAST ([A-Z]+)-----\r?\n([\s\S]*?)-----END BALLAST \1-----/.exec(s);
+    if (!m) throw new Error("not a Ballast file");
+    const [, kind, inner] = m;
+    if (!KINDS.includes(kind)) throw new Error(`unknown kind ${kind}`);
+    if (expectKind && kind !== expectKind) throw new Error(`expected a ${expectKind}, got a ${kind}`);
+    const [head, ...rest] = inner.split(/\r?\n\r?\n/);
+    const headers = Object.fromEntries(head.split(/\r?\n/).filter(Boolean).map((l) => {
+      const i = l.indexOf(":");
+      return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
+    }));
+    if (headers.version !== "1") throw new Error(`unsupported version ${headers.version}`);
+    const bytes = unb64(rest.join(""));
+    if (hex(await sha256(bytes)) !== headers.sha256) throw new Error("corrupt file: sha256 mismatch");
+    const body = JSON.parse(text(bytes));
+    if (body.kind !== kind.toLowerCase()) throw new Error("armor kind does not match body");
+    return { kind, headers, body };
+  };
+  var sniff = (s) => (/-----BEGIN BALLAST ([A-Z]+)-----/.exec(s) || [])[1] || null;
+
+  // src/crew.js
+  var registerCrew = (name, pin, pub) => armor("CREW", { v: 1, kind: "crew", name, pin: String(pin), pub }, { train: `CN ${pin}`, name });
+  var readCrew = async (t) => {
+    const { body } = await dearmor(t, "CREW");
+    if (!/^\d{4,8}$/.test(body.pin)) throw new Error("bad PIN");
+    return body;
+  };
+  var CRC = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  var crc32 = (b) => {
+    let c = 4294967295;
+    for (const x of b) c = CRC[(c ^ x) & 255] ^ c >>> 8;
+    return (c ^ 4294967295) >>> 0;
+  };
+  var u32 = (n) => new Uint8Array([n >>> 24, n >>> 16 & 255, n >>> 8 & 255, n & 255]);
+  var chunk = (type, data) => {
+    const t = utf8(type);
+    const td = new Uint8Array(t.length + data.length);
+    td.set(t);
+    td.set(data, t.length);
+    const out = new Uint8Array(12 + data.length);
+    out.set(u32(data.length));
+    out.set(td, 4);
+    out.set(u32(crc32(td)), 8 + data.length);
+    return out;
+  };
+  var badgeWrite = (png, crewText) => {
+    const data = new Uint8Array([...utf8("ballast"), 0, ...utf8(crewText)]);
+    const c = chunk("tEXt", data);
+    const ihdrEnd = 8 + 12 + 13;
+    const out = new Uint8Array(png.length + c.length);
+    out.set(png.slice(0, ihdrEnd));
+    out.set(c, ihdrEnd);
+    out.set(png.slice(ihdrEnd), ihdrEnd + c.length);
+    return out;
+  };
+  var badgeRead = (png) => {
+    let p = 8;
+    while (p + 8 <= png.length) {
+      const len = (png[p] << 24 | png[p + 1] << 16 | png[p + 2] << 8 | png[p + 3]) >>> 0;
+      const type = text(png.slice(p + 4, p + 8));
+      if (type === "tEXt") {
+        const d = png.slice(p + 8, p + 8 + len);
+        const z = d.indexOf(0);
+        if (text(d.slice(0, z)) === "ballast") return text(d.slice(z + 1));
+      }
+      if (type === "IEND") break;
+      p += 12 + len;
+    }
+    return null;
+  };
+
+  // src/app/store.js
+  var DB = "ballast";
+  var VER = 1;
+  var db = () => new Promise((res, rej) => {
+    const r = indexedDB.open(DB, VER);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv");
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  var tx = async (mode, fn) => {
+    const d = await db();
+    return new Promise((res, rej) => {
+      const t = d.transaction("kv", mode);
+      const q = fn(t.objectStore("kv"));
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+  };
+  var get = (k) => tx("readonly", (s) => s.get(k));
+  var set = (k, v) => tx("readwrite", (s) => s.put(v, k));
+  var del = (k) => tx("readwrite", (s) => s.delete(k));
+
+  // src/crypto.js
+  var subtle = crypto.subtle;
+  var EC = { name: "ECDH", namedCurve: "P-256" };
+  var keypair = async (extractable = false) => {
+    const kp = await subtle.generateKey(EC, extractable, ["deriveBits"]);
+    return { priv: kp.privateKey, pub: b64url(new Uint8Array(await subtle.exportKey("raw", kp.publicKey))) };
+  };
+  var importPub = (pub) => subtle.importKey("raw", unb64url(pub), EC, true, []);
+  var exportPriv = (priv) => subtle.exportKey("jwk", priv);
+  var importPriv = (jwk, extractable = true) => subtle.importKey("jwk", jwk, EC, extractable, ["deriveBits"]);
+  var shared = async (priv, theirPub) => new Uint8Array(await subtle.deriveBits({ name: "ECDH", public: await importPub(theirPub) }, priv, 256));
+  var hkdfKey = async (ikm, salt, info) => {
+    const k = await subtle.importKey("raw", ikm, "HKDF", false, ["deriveKey"]);
+    return subtle.deriveKey(
+      { name: "HKDF", hash: "SHA-256", salt, info: utf8(info) },
+      k,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  };
+  var rawKey = (bytes) => subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  var passKey = async (passphrase, salt, iterations = 6e5) => {
+    const k = await subtle.importKey("raw", utf8(passphrase), "PBKDF2", false, ["deriveKey"]);
+    return subtle.deriveKey(
+      { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+      k,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  };
+  var seal = async (key, plaintextBytes) => {
+    const nonce = random(12);
+    const ct = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, plaintextBytes));
+    return b64url(concat(nonce, ct));
+  };
+  var open = async (key, box) => {
+    const all = unb64url(box);
+    try {
+      return new Uint8Array(await subtle.decrypt({ name: "AES-GCM", iv: all.slice(0, 12) }, key, all.slice(12)));
+    } catch {
+      throw new Error("cannot open: wrong key or tampered data");
+    }
+  };
+  var sealJSON = (key, obj) => seal(key, utf8(JSON.stringify(obj)));
+  var openJSON = async (key, box) => JSON.parse(text(await open(key, box)));
+  var sidOf = async (salt, pin) => b64url((await sha256(concat(salt, utf8(String(pin).trim())))).slice(0, 16));
+  var INFO = {
+    wrap: "ballast/wrap/1",
+    spike: "ballast/spike/1",
+    plate: "ballast/plate/1",
+    item: (id) => `ballast/item/1/${id}`
+  };
+
+  // src/txt.js
+  var DUR = { s: 1, m: 60, h: 3600 };
+  var parseTime = (s) => {
+    const m = /^(\d+)\s*([smh])?$/i.exec(s.trim());
+    if (!m) throw new Error(`bad time "${s}" (use 90m, 5400s, 1h)`);
+    return Number(m[1]) * DUR[(m[2] || "m").toLowerCase()];
+  };
+  var parsePct = (s) => {
+    const n = parseFloat(s);
+    return s.includes("%") ? n / 100 : n > 1 ? n / 100 : n;
+  };
+  var parseAreas = (s) => s.split("\xB7").map((a) => a.trim()).filter(Boolean).map((a) => {
+    const m = /^(\S+)\s*(?:"([^"]*)")?$/.exec(a);
+    if (!m) throw new Error(`bad area "${a}"`);
+    return { id: m[1], label: m[2] || m[1] };
+  });
+  var KEYS = /* @__PURE__ */ new Set(["id", "type", "area", "ref", "lcr", "tags", "svg", "img", "alt", "worth"]);
+  var parseTest = async (source) => {
+    const errors = [];
+    const blocks = source.replace(/\r\n/g, "\n").split(/\n---+\n/);
+    const head = blocks.shift() || "";
+    const test = { title: "Untitled test", settings: { time: 3600, pass: 0.9, shuffleItems: true, shuffleOptions: true, allowBack: false }, areas: [], items: [] };
+    for (const line of head.split("\n")) {
+      const l = line.trim();
+      if (!l) continue;
+      if (l.startsWith("#")) {
+        test.title = l.replace(/^#+\s*/, "");
+        continue;
+      }
+      const i = l.indexOf(":");
+      if (i < 0) {
+        errors.push(`header: "${l}" is not key: value`);
+        continue;
+      }
+      const k = l.slice(0, i).trim().toLowerCase(), v = l.slice(i + 1).trim();
+      try {
+        if (k === "time") test.settings.time = parseTime(v);
+        else if (k === "pass") test.settings.pass = parsePct(v);
+        else if (k === "shuffle") {
+          test.settings.shuffleItems = /items/.test(v);
+          test.settings.shuffleOptions = /options/.test(v);
+        } else if (k === "back") test.settings.allowBack = /^(yes|true|on)$/i.test(v);
+        else if (k === "areas") test.areas = parseAreas(v);
+        else errors.push(`header: unknown key "${k}"`);
+      } catch (e) {
+        errors.push(`header: ${e.message}`);
+      }
+    }
+    const areaIds = new Set(test.areas.map((a) => a.id));
+    const seen = /* @__PURE__ */ new Set();
+    for (const [n, block] of blocks.entries()) {
+      if (!block.trim()) continue;
+      const item = { type: "mc", prompt: "", options: [], pairs: [], key: null, answer: "", ref: [], tags: [], img: [], worth: 1 };
+      let mode = null;
+      for (const raw of block.split("\n")) {
+        const line = raw.trimEnd();
+        if (!line.trim()) {
+          mode = null;
+          continue;
+        }
+        let m;
+        if (m = /^Q:\s?(.*)$/.exec(line)) {
+          item.prompt = m[1];
+          mode = "q";
+          continue;
+        }
+        if (m = /^(\*?)([a-z])\)\s?(.*)$/.exec(line)) {
+          item.options.push({ id: m[2], text: m[3] });
+          if (m[1]) item.key = m[2];
+          mode = null;
+          continue;
+        }
+        if (m = /^L:\s?(.*?)\s*=\s*(.*)$/.exec(line)) {
+          item.pairs.push({ id: String.fromCharCode(97 + item.pairs.length), left: m[1], right: m[2] });
+          mode = null;
+          continue;
+        }
+        if (m = /^A:\s?(.*)$/.exec(line)) {
+          item.answer = m[1];
+          mode = null;
+          continue;
+        }
+        if ((m = /^([a-z]+):\s?(.*)$/i.exec(line)) && KEYS.has(m[1].toLowerCase())) {
+          const k = m[1].toLowerCase(), v = m[2].trim();
+          if (k === "ref") item.ref.push(...v.split(/\s*[,;]\s*|\s+(?=CROR|GOI|GR)/).filter(Boolean));
+          else if (k === "tags") item.tags.push(...v.split(/\s+/).filter(Boolean));
+          else if (k === "img") item.img.push({ name: v, alt: "" });
+          else if (k === "alt") {
+            if (item.img.length) item.img[item.img.length - 1].alt = v;
+            else errors.push(`item ${n + 1}: alt: before img:`);
+          } else if (k === "worth") item.worth = Number(v) || 1;
+          else item[k] = v;
+          mode = null;
+          continue;
+        }
+        if (mode === "q") {
+          item.prompt += "\n" + line;
+          continue;
+        }
+        errors.push(`item ${n + 1}: cannot read line "${line}"`);
+      }
+      if (!item.prompt) errors.push(`item ${n + 1}: no Q:`);
+      if (item.type === "mc" && item.options.length < 2) errors.push(`item ${n + 1}: mc needs at least two options`);
+      if (item.type === "mc" && !item.key) errors.push(`item ${n + 1}: mc has no * key`);
+      if (item.type === "match") {
+        if (item.pairs.length < 2) errors.push(`item ${n + 1}: match needs at least two L: pairs`);
+        item.worth = item.pairs.length;
+      }
+      if (item.type === "short" && !item.answer) errors.push(`item ${n + 1}: short has no A: model answer`);
+      if (!["mc", "match", "short"].includes(item.type)) errors.push(`item ${n + 1}: unknown type "${item.type}"`);
+      if (item.area && areaIds.size && !areaIds.has(item.area)) errors.push(`item ${n + 1}: area "${item.area}" not in areas:`);
+      if (!item.id) item.id = "q" + hex(await sha256(utf8(item.prompt + item.type))).slice(0, 8);
+      if (seen.has(item.id)) errors.push(`item ${n + 1}: duplicate id "${item.id}"`);
+      seen.add(item.id);
+      test.items.push(item);
+    }
+    if (!test.items.length) errors.push("no items (separate items with --- lines)");
+    return { test, errors };
+  };
+  var publicItem = ({ key, answer, ...rest }) => rest;
+
+  // src/shuffle.js
+  var fnv = (s) => {
+    let h2 = 2166136261 >>> 0;
+    for (const c of s) {
+      h2 ^= c.charCodeAt(0);
+      h2 = Math.imul(h2, 16777619) >>> 0;
+    }
+    return h2;
+  };
+  var mulberry32 = (a) => () => {
+    a |= 0;
+    a = a + 1831565813 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+  var shuffled = (arr, seed) => {
+    const r = mulberry32(fnv(seed));
+    const out = arr.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(r() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  };
+
+  // src/tgbo.js
+  var itemsHash = async (items) => hex(await sha256(utf8(items.map((i) => i.id + "\n" + i.box).join("\n"))));
+  var issueTGBO = async (test, rtc, trains, assets = {}, rtcName = "") => {
+    const id = b64url(random(16)), saltBytes = random(16), salt = b64url(saltBytes);
+    const K = random(32), Kkey = await rawKey(K);
+    const items = [];
+    for (const it of test.items) {
+      const pub = publicItem(it);
+      pub.img = pub.img.map(({ name, alt }) => {
+        const a = assets[name];
+        if (!a) throw new Error(`asset "${name}" for item ${it.id} was not provided`);
+        return { name, alt, mime: a.mime, b64: a.b64 };
+      });
+      const ik = await hkdfKey(K, saltBytes, INFO.item(it.id));
+      items.push({ id: it.id, area: it.area || null, box: await sealJSON(ik, pub) });
+    }
+    const wraps = [];
+    for (const t of trains) {
+      const wk = await hkdfKey(await shared(rtc.priv, t.pub), saltBytes, INFO.wrap);
+      wraps.push({ sid: await sidOf(saltBytes, t.pin), box: await sealJSON(wk, { K: b64url(K) }) });
+    }
+    const hash = await itemsHash(items);
+    const body = { v: 1, kind: "tgbo", id, salt, title: test.title, settings: test.settings, areas: test.areas, rtc: rtc.pub, rtcName, wraps, items, hash };
+    const text2 = await armor("TGBO", body, { title: test.title, rtc: rtcName, items: items.length, trains: trains.length, complete: hash.slice(0, 4).toUpperCase() });
+    return { text: text2, record: { id, salt, hash, key: b64url(K), title: test.title } };
+  };
+  var copyTGBO = async (text2, train, pin) => {
+    const { body } = await dearmor(text2, "TGBO");
+    if (await itemsHash(body.items) !== body.hash) throw new Error("TGBO does not compare: items altered");
+    const saltBytes = unb64url(body.salt);
+    const sid = await sidOf(saltBytes, pin);
+    const wrap2 = body.wraps.find((w) => w.sid === sid);
+    if (!wrap2) throw new Error(`TGBO is not addressed to ${pin}`);
+    const wk = await hkdfKey(await shared(train.priv, body.rtc), saltBytes, INFO.wrap);
+    const { K } = await openJSON(wk, wrap2.box);
+    const Kb = unb64url(K);
+    const order = body.settings.shuffleItems ? shuffled(body.items.map((i) => i.id), sid) : body.items.map((i) => i.id);
+    const byId = Object.fromEntries(body.items.map((i) => [i.id, i]));
+    return {
+      id: body.id,
+      salt: body.salt,
+      hash: body.hash,
+      title: body.title,
+      settings: body.settings,
+      areas: body.areas,
+      rtc: body.rtc,
+      rtcName: body.rtcName || "",
+      sid,
+      order,
+      complete: body.hash.slice(0, 4).toUpperCase(),
+      /** Decrypt exactly one item, with its options in this train's order. */
+      item: async (itemId) => {
+        const it = byId[itemId];
+        if (!it) throw new Error(`no item ${itemId}`);
+        const p = await openJSON(await hkdfKey(Kb, saltBytes, INFO.item(itemId)), it.box);
+        if (body.settings.shuffleOptions && p.options?.length) p.options = shuffled(p.options, sid + itemId);
+        if (p.pairs?.length) p.rights = shuffled(p.pairs.map((x) => ({ id: x.id, text: x.right })), sid + itemId + "r");
+        return p;
+      }
+    };
+  };
+  var openItem = async (record, tgboBody, itemId) => {
+    const saltBytes = unb64url(record.salt);
+    const it = tgboBody.items.find((i) => i.id === itemId);
+    return openJSON(await hkdfKey(unb64url(record.key), saltBytes, INFO.item(itemId)), it.box);
+  };
+
+  // src/release.js
+  var giveRelease = async (tgbo, train, pin, attempt) => {
+    const key = await hkdfKey(await shared(train.priv, tgbo.rtc), unb64url(tgbo.salt), INFO.spike);
+    const body = { v: 1, kind: "release", tgbo: tgbo.id, hash: tgbo.hash, sid: tgbo.sid, pin: String(pin), train: train.pub, box: await sealJSON(key, attempt) };
+    return armor("RELEASE", body, { title: tgbo.title, train: `CN ${pin}`, answered: Object.keys(attempt.answers || {}).length });
+  };
+  var takeRelease = async (text2, rtc, record) => {
+    const { body } = await dearmor(text2, "RELEASE");
+    if (body.tgbo !== record.id) throw new Error("release is for a different TGBO");
+    if (body.hash !== record.hash) throw new Error("release does not compare: TGBO hash differs");
+    const key = await hkdfKey(await shared(rtc.priv, body.train), unb64url(record.salt), INFO.spike);
+    const attempt = await openJSON(key, body.box);
+    return { pin: body.pin, sid: body.sid, train: body.train, attempt };
+  };
+
+  // src/cancel.js
+  var cancelTGBO = async (record, rtc, trainPub, pin, result) => {
+    const key = await hkdfKey(await shared(rtc.priv, trainPub), unb64url(record.salt), INFO.plate);
+    const { perItem, ...rest } = result;
+    const body = {
+      v: 1,
+      kind: "cancel",
+      tgbo: record.id,
+      salt: record.salt,
+      pin: String(pin),
+      rtc: rtc.pub,
+      box: await sealJSON(key, { title: record.title, pin: String(pin), ...rest })
+    };
+    return armor("CANCEL", body, { title: record.title, train: `CN ${pin}`, grade: `${Math.round(result.grade * 100)}%` });
+  };
+  var readCancel = async (text2, train) => {
+    const { body } = await dearmor(text2, "CANCEL");
+    const key = await hkdfKey(await shared(train.priv, body.rtc), unb64url(body.salt), INFO.plate);
+    return openJSON(key, body.box);
+  };
+
+  // src/app/attempt.js
+  var initial = (order) => ({ order, at: 0, answers: {}, breaks: [], open: null, locked: null, started: null, finished: null, shown: {} });
+  var step = (s, [t, kind, a, b]) => {
+    switch (kind) {
+      case "copy":
+        return { ...s, started: t };
+      case "show":
+        return { ...s, at: Math.max(0, s.order.indexOf(a)), shown: { ...s.shown, [a]: (s.shown[a] || 0) + 1 } };
+      case "answer":
+        return { ...s, answers: { ...s.answers, [a]: b } };
+      case "break":
+        return { ...s, open: { at: t, why: a } };
+      case "resume":
+        return s.open ? { ...s, open: null, breaks: [...s.breaks, { at: s.open.at, ms: t - s.open.at, why: s.open.why }] } : s;
+      case "lock":
+        return { ...s, locked: { at: t, why: a } };
+      case "submit":
+        return { ...s, finished: t, open: null };
+      default:
+        return s;
+    }
+  };
+  var fold = (order, events) => events.reduce(step, initial(order));
+  var toRelease = (order, events) => {
+    const s = fold(order, events);
+    return {
+      started: s.started,
+      finished: s.finished ?? events.at(-1)?.[0] ?? null,
+      answers: s.answers,
+      events,
+      breaks: s.breaks,
+      ua: typeof navigator === "undefined" ? "" : navigator.userAgent
+    };
+  };
+
+  // src/svg.js
+  var esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  var LAMP = { G: "#2fbf4a", Y: "#f2c319", R: "#e23b2e", L: "#f4f4f4", x: "#2a2a2a" };
+  var signal = (arg) => {
+    const heads = arg.trim().split(/\s*,\s*/).filter(Boolean);
+    const h2 = 40 + heads.length * 70;
+    let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 ${h2}" width="240" height="${h2 * 2}">`;
+    s += `<rect x="56" y="0" width="8" height="${h2}" fill="#555"/>`;
+    heads.forEach((raw, i) => {
+      const flash = /f$/i.test(raw), c = LAMP[raw.replace(/f$/i, "")] ?? LAMP.x;
+      const cy = 35 + i * 70;
+      s += `<rect x="30" y="${cy - 30}" width="60" height="60" rx="10" fill="#1b1b1b"/><circle cx="60" cy="${cy}" r="20" fill="${c}"/>`;
+      if (flash) for (let k = 0; k < 8; k++) {
+        const a = k * Math.PI / 4;
+        s += `<line x1="${60 + 24 * Math.cos(a)}" y1="${cy + 24 * Math.sin(a)}" x2="${60 + 32 * Math.cos(a)}" y2="${cy + 32 * Math.sin(a)}" stroke="${c}" stroke-width="3"/>`;
+      }
+    });
+    return s + "</svg>";
+  };
+  var sw = (arg) => {
+    const rev = /rev/i.test(arg);
+    let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 160" width="400" height="160">`;
+    s += `<line x1="0" y1="110" x2="400" y2="110" stroke="#444" stroke-width="6"/>`;
+    s += `<path d="M120 110 Q 220 110 300 50 L 400 50" fill="none" stroke="#444" stroke-width="6"/>`;
+    s += `<path d="M120 110 Q 200 110 250 ${rev ? 76 : 110}" fill="none" stroke="${rev ? "#c0392b" : "#2fbf4a"}" stroke-width="8"/>`;
+    s += `<rect x="330" y="120" width="14" height="30" fill="#333"/><rect x="322" y="112" width="30" height="12" fill="${rev ? "#e23b2e" : "#2fbf4a"}"/>`;
+    s += `<text x="10" y="150" font-size="16" font-family="sans-serif" fill="#333">switch ${rev ? "reversed" : "normal"}</text>`;
+    return s + "</svg>";
+  };
+  var form = (arg) => {
+    const f = {};
+    for (const m of arg.matchAll(/(\w+)=(?:"([^"]*)"|(\S+))/g)) f[m[1]] = m[2] ?? m[3];
+    const row = (y, label, val) => `<text x="16" y="${y}" font-size="13" fill="#666" font-family="sans-serif">${esc(label)}</text><text x="130" y="${y}" font-size="15" fill="#111" font-family="monospace">${esc(val || "")}</text><line x1="130" y1="${y + 4}" x2="560" y2="${y + 4}" stroke="#bbb"/>`;
+    let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 330" width="580" height="330"><rect x="1" y="1" width="578" height="328" fill="#fffef5" stroke="#333"/>`;
+    s += `<text x="16" y="28" font-size="18" font-weight="bold" font-family="sans-serif">${esc(f.kind || "OCS Clearance")}</text><text x="440" y="28" font-size="16" font-family="monospace">No. ${esc(f.no || "")}</text>`;
+    const rows = [["To", f.to], ["Do not leave until", f.until], ["Proceed from / to", f.proceed], ["Work between", f.work], ["Take siding at", f.siding], ["Protect against", f.protect], ["Warning switches", f.warning], ["Permission switches", f.permission], ["Call RTC", f.call]];
+    rows.forEach(([l, v], i) => {
+      s += row(60 + i * 26, l, v);
+    });
+    s += row(300, "Complete", `${f.complete || ""}   RTC ${f.rtc || ""}`);
+    return s + "</svg>";
+  };
+  var KINDS2 = { signal, switch: sw, form };
+  var svgFor = (spec) => {
+    const m = /^(\w+)\s*(.*)$/s.exec(spec.trim());
+    const fn = m && KINDS2[m[1].toLowerCase()];
+    return fn ? fn(m[2]) : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 40" width="300" height="40"><text x="4" y="26" font-size="14" fill="#a00" font-family="sans-serif">unknown drawing: ${esc(spec)}</text></svg>`;
+  };
+
+  // src/app/draw.js
+  var FONT = "16px Arial, sans-serif";
+  var BOLD = "bold 18px Arial, sans-serif";
+  var wrap = (ctx2, text2, x, y, w, lh) => {
+    let yy = y;
+    for (const para of String(text2).split("\n")) {
+      let line = "";
+      for (const word of para.split(" ")) {
+        const t = line ? line + " " + word : word;
+        if (ctx2.measureText(t).width > w && line) {
+          ctx2.fillText(line, x, yy);
+          yy += lh;
+          line = word;
+        } else line = t;
+      }
+      ctx2.fillText(line, x, yy);
+      yy += lh;
+    }
+    return yy;
+  };
+  var bitmapCache = /* @__PURE__ */ new Map();
+  var bitmapFor = async (key, bytesOrSvg, mime) => {
+    if (bitmapCache.has(key)) return bitmapCache.get(key);
+    const blob = typeof bytesOrSvg === "string" ? new Blob([bytesOrSvg], { type: "image/svg+xml" }) : new Blob([bytesOrSvg], { type: mime });
+    const bmp = await createImageBitmap(blob).catch(() => null);
+    bitmapCache.set(key, bmp);
+    return bmp;
+  };
+  var forget = () => {
+    for (const b of bitmapCache.values()) b?.close?.();
+    bitmapCache.clear();
+  };
+  var drawItem = (canvas, item, { answer, pick, images = [], watermark = "", index = 0, count = 0 }) => {
+    const ctx2 = canvas.getContext("2d");
+    const W = canvas.width, pad = 24, lh = 24, colW = W - 2 * pad;
+    const hits = [];
+    ctx2.clearRect(0, 0, W, canvas.height);
+    ctx2.fillStyle = "#fff";
+    ctx2.fillRect(0, 0, W, canvas.height);
+    ctx2.fillStyle = "#111";
+    ctx2.font = BOLD;
+    ctx2.textBaseline = "top";
+    ctx2.fillText(`${index + 1} / ${count}`, pad, pad);
+    let y = pad + 36;
+    ctx2.font = FONT;
+    y = wrap(ctx2, item.prompt, pad, y, colW, lh) + 8;
+    for (const img of images) if (img) {
+      const scale = Math.min(1, colW / img.width, 360 / img.height);
+      const w = img.width * scale, hh = img.height * scale;
+      ctx2.drawImage(img, pad, y, w, hh);
+      hits.push({ x: pad, y, w, h: hh, kind: "zoom", id: img });
+      y += hh + 12;
+    }
+    if (item.type === "mc") {
+      for (const o of item.options) {
+        const top = y;
+        ctx2.fillStyle = answer === o.id ? "#dbeafe" : "#f5f5f5";
+        ctx2.fillRect(pad, top, colW, 4);
+        ctx2.fillStyle = "#111";
+        const end = wrap(ctx2, o.text, pad + 40, top + 8, colW - 48, lh);
+        const hh = end - top + 4;
+        ctx2.fillStyle = answer === o.id ? "#dbeafe" : "#f5f5f5";
+        ctx2.fillRect(pad, top, colW, hh);
+        ctx2.fillStyle = "#111";
+        ctx2.font = BOLD;
+        ctx2.fillText(o.id + ")", pad + 10, top + 8);
+        ctx2.font = FONT;
+        wrap(ctx2, o.text, pad + 40, top + 8, colW - 48, lh);
+        hits.push({ x: pad, y: top, w: colW, h: hh, kind: "option", id: o.id });
+        y = top + hh + 8;
+      }
+    } else if (item.type === "match") {
+      const half = (colW - 16) / 2, a = answer || {};
+      ctx2.font = BOLD;
+      ctx2.fillText("Terms", pad, y);
+      ctx2.fillText("Definitions", pad + half + 16, y);
+      ctx2.font = FONT;
+      y += lh + 4;
+      let yl = y, yr = y;
+      for (const p of item.pairs) {
+        const top = yl;
+        const chosen = a[p.id];
+        ctx2.fillStyle = pick === p.id ? "#fde68a" : chosen ? "#dcfce7" : "#f5f5f5";
+        ctx2.fillRect(pad, top, half, 4);
+        const end = wrap(ctx2, `${chosen ? "\u2713 " : ""}${p.left}${chosen ? "  \u2192 " + item.rights.findIndex((r) => r.id === chosen) + 1 : ""}`, pad + 8, top + 6, half - 16, lh);
+        const hh = end - top + 2;
+        ctx2.fillStyle = pick === p.id ? "#fde68a" : chosen ? "#dcfce7" : "#f5f5f5";
+        ctx2.fillRect(pad, top, half, hh);
+        ctx2.fillStyle = "#111";
+        wrap(ctx2, `${chosen ? "\u2713 " : ""}${p.left}${chosen ? "  \u2192 " + (item.rights.findIndex((r) => r.id === chosen) + 1) : ""}`, pad + 8, top + 6, half - 16, lh);
+        hits.push({ x: pad, y: top, w: half, h: hh, kind: "left", id: p.id });
+        yl = top + hh + 6;
+      }
+      item.rights.forEach((r, i) => {
+        const top = yr, x = pad + half + 16;
+        const end = wrap(ctx2, `${i + 1}. ${r.text}`, x + 8, top + 6, half - 16, lh);
+        const hh = end - top + 2;
+        ctx2.fillStyle = "#f5f5f5";
+        ctx2.fillRect(x, top, half, hh);
+        ctx2.fillStyle = "#111";
+        wrap(ctx2, `${i + 1}. ${r.text}`, x + 8, top + 6, half - 16, lh);
+        hits.push({ x, y: top, w: half, h: hh, kind: "right", id: r.id });
+        yr = top + hh + 6;
+      });
+      y = Math.max(yl, yr);
+    }
+    if (watermark) {
+      ctx2.save();
+      ctx2.globalAlpha = 0.09;
+      ctx2.fillStyle = "#000";
+      ctx2.font = "bold 40px Arial";
+      ctx2.translate(W / 2, canvas.height / 2);
+      ctx2.rotate(-Math.PI / 7);
+      for (let k = -2; k <= 2; k++) ctx2.fillText(watermark, -W / 2, k * 160);
+      ctx2.restore();
+    }
+    return { hits, height: y + pad };
+  };
+  var imagesFor = async (item) => {
+    const out = [];
+    if (item.svg) out.push(await bitmapFor("svg:" + item.id, svgFor(item.svg)));
+    for (const [i, im] of (item.img || []).entries()) out.push(await bitmapFor(`img:${item.id}:${i}`, Uint8Array.from(atob(im.b64), (c) => c.charCodeAt(0)), im.mime));
+    return out;
+  };
+
+  // src/app/train.js
+  var now = () => Date.now();
+  var identity = async () => await get("crew") || null;
+  var makeIdentity = async (name, pin) => {
+    const kp = await keypair(false);
+    const crew = { name, pin, pub: kp.pub, priv: kp.priv };
+    await set("crew", crew);
+    return crew;
+  };
+  var renderRegister = (root3, go3) => {
+    let photoBytes = null, stream = null;
+    const video = h("video", { autoplay: true, playsinline: true, style: { display: "none", width: "240px", borderRadius: "8px" } });
+    const preview = h("canvas", { width: 240, height: 240, style: { display: "none", borderRadius: "8px" } });
+    const status = h("p", { class: "status" });
+    const stopCam = () => {
+      stream?.getTracks().forEach((t) => t.stop());
+      stream = null;
+      video.style.display = "none";
+    };
+    const usePhoto = (drawFn) => {
+      const c = preview.getContext("2d");
+      c.fillStyle = "#ddd";
+      c.fillRect(0, 0, 240, 240);
+      drawFn(c);
+      preview.style.display = "block";
+      preview.toBlob(async (b) => {
+        photoBytes = new Uint8Array(await b.arrayBuffer());
+      }, "image/png");
+    };
+    const webcam = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 480 } });
+        video.srcObject = stream;
+        video.style.display = "block";
+      } catch {
+        status.textContent = "No camera available \u2014 upload a photo instead.";
+      }
+    };
+    const snap = () => {
+      if (!stream) return;
+      usePhoto((c) => {
+        const s = Math.min(video.videoWidth, video.videoHeight);
+        c.drawImage(video, (video.videoWidth - s) / 2, (video.videoHeight - s) / 2, s, s, 0, 0, 240, 240);
+      });
+      stopCam();
+    };
+    const upload = async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const bmp = await createImageBitmap(f);
+      const s = Math.min(bmp.width, bmp.height);
+      usePhoto((c) => c.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, 240, 240));
+    };
+    const name = h("input", { placeholder: "Name", required: true, autocomplete: "name" });
+    const pin = h("input", { placeholder: "PIN (engine number)", inputmode: "numeric", pattern: "\\d{4,8}", required: true });
+    const submit = async (e) => {
+      e.preventDefault();
+      if (!/^\d{4,8}$/.test(pin.value)) {
+        status.textContent = "PIN must be 4\u20138 digits.";
+        return;
+      }
+      const crew = await makeIdentity(name.value.trim(), pin.value.trim());
+      const text2 = await registerCrew(crew.name, crew.pin, crew.pub);
+      let png;
+      if (photoBytes) png = badgeWrite(photoBytes, text2);
+      else {
+        const c = h("canvas", { width: 240, height: 240 });
+        const x = c.getContext("2d");
+        x.fillStyle = "#334";
+        x.fillRect(0, 0, 240, 240);
+        x.fillStyle = "#fff";
+        x.font = "bold 28px Arial";
+        x.fillText(`CN ${crew.pin}`, 20, 120);
+        x.font = "16px Arial";
+        x.fillText(crew.name, 20, 160);
+        png = badgeWrite(new Uint8Array(await (await new Promise((r) => c.toBlob(r, "image/png"))).arrayBuffer()), text2);
+      }
+      download(`badge-CN${crew.pin}.png`, new Blob([png], { type: "image/png" }));
+      stopCam();
+      go3({ screen: "registered", crew, text: text2 });
+    };
+    mount(
+      root3,
+      h("h1", {}, "Register crew"),
+      h("p", {}, "Your browser makes a key it will keep. Your badge carries the public half to the RTC. Send the badge (or the text) to your instructor."),
+      h(
+        "form",
+        { onsubmit: submit, class: "card" },
+        h("label", {}, "Name ", name),
+        h("label", {}, "PIN ", pin),
+        h("div", { class: "row" }, h("button", { type: "button", onclick: webcam }, "Use webcam"), h("button", { type: "button", onclick: snap }, "Take photo"), h("label", { class: "btn" }, "Upload photo", h("input", { type: "file", accept: "image/*", onchange: upload, style: { display: "none" } }))),
+        video,
+        preview,
+        status,
+        h("button", { type: "submit", class: "primary" }, "Make my badge")
+      )
+    );
+  };
+  var renderRegistered = (root3, { crew, text: text2 }, go3) => mount(
+    root3,
+    h("h1", {}, `CN ${crew.pin} \u2014 ${crew.name}`),
+    h("p", {}, "Badge downloaded. If attachments are blocked, paste this into your message instead:"),
+    h("textarea", { readonly: true, rows: 8, value: text2, onclick: (e) => e.target.select() }),
+    h("div", { class: "row" }, h("button", { onclick: () => navigator.clipboard?.writeText(text2) }, "Copy text"), h("button", { onclick: () => go3({ screen: "home" }) }, "Done"))
+  );
+  var renderCopy = async (root3, { text: text2 }, go3) => {
+    const crew = await identity();
+    if (!crew) return mount(root3, h("h1", {}, "No crew registered"), h("p", {}, "Register first, then send your badge to the RTC and wait for a TGBO addressed to you."), h("button", { onclick: () => go3({ screen: "register" }) }, "Register"));
+    let tgbo;
+    try {
+      tgbo = await copyTGBO(text2, { priv: crew.priv, pub: crew.pub }, crew.pin);
+    } catch (e) {
+      return mount(root3, h("h1", {}, "Cannot copy this TGBO"), h("p", { class: "bad" }, e.message), h("button", { onclick: () => go3({ screen: "home" }) }, "Back"));
+    }
+    const saved = await get("attempt:" + tgbo.id);
+    const repeat = h("input", { placeholder: "Repeat the four characters", maxlength: 4, autocomplete: "off", style: { textTransform: "uppercase" } });
+    const status = h("p", { class: "status" });
+    const start = async (e) => {
+      e.preventDefault();
+      if (repeat.value.trim().toUpperCase() !== tgbo.complete) {
+        status.textContent = "Does not compare. Read it again and repeat.";
+        return;
+      }
+      try {
+        await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+      } catch {
+        status.textContent = "Fullscreen is required for this test.";
+        return;
+      }
+      try {
+        await navigator.keyboard?.lock?.();
+      } catch {
+      }
+      const events = saved?.events?.length ? saved.events : [[now(), "copy", tgbo.complete]];
+      go3({ screen: "work", tgbo, crew, events });
+    };
+    mount(
+      root3,
+      h("h1", {}, tgbo.title),
+      h(
+        "div",
+        { class: "card" },
+        h("p", {}, `TGBO addressed to CN ${crew.pin}. ${tgbo.order.length} items \xB7 ${fmtTime(tgbo.settings.time)} \xB7 pass mark ${Math.round(tgbo.settings.pass * 100)}%.`),
+        h("p", {}, "Rule 136. Copy as transmitted, then repeat back:"),
+        h("p", { class: "complete" }, `Complete ${hhmm()} \xB7 RTC ${tgbo.rtcName || ""} \xB7 `, h("b", {}, tgbo.complete)),
+        saved?.events?.length ? h("p", { class: "status" }, `An attempt in progress was found (${Object.keys(fold(tgbo.order, saved.events).answers).length} answered). It will resume.`) : null,
+        h("form", { onsubmit: start, class: "row" }, repeat, h("button", { type: "submit", class: "primary" }, "Repeat and enter fullscreen")),
+        status,
+        h("p", { class: "small" }, "From here on: one item at a time, fullscreen, no copying. Leaving fullscreen or the tab is recorded.")
+      )
+    );
+  };
+  var renderWork = async (root3, { tgbo, crew, events }, go3) => {
+    forget();
+    const log = (kind, a, b) => {
+      events.push([now(), kind, a, b]);
+      set("attempt:" + tgbo.id, { events });
+    };
+    const state = () => fold(tgbo.order, events);
+    const canvas = h("canvas", { width: 900, height: 700, tabindex: 0 });
+    const timer = h("span", { class: "timer" });
+    const status = h("p", { class: "status" });
+    const answerBox = h("textarea", { rows: 4, placeholder: "Your answer (short answer item)", style: { display: "none" } });
+    let item = null, hits = [], pick = null, images = [];
+    const watermark = `CN ${crew.pin} ${crew.name} ${hhmm()}`;
+    const deadline = () => (state().started || now()) + tgbo.settings.time * 1e3;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((deadline() - now()) / 1e3));
+      timer.textContent = fmtTime(left);
+      if (left <= 0 && !state().finished) submit("time");
+    };
+    const iv = setInterval(tick, 500);
+    const draw = () => {
+      const s = state();
+      const r = drawItem(canvas, item, { answer: s.answers[item.id], pick, images, watermark, index: s.at, count: tgbo.order.length });
+      hits = r.hits;
+      canvas.height = Math.max(360, r.height);
+      const r2 = drawItem(canvas, item, { answer: s.answers[item.id], pick, images, watermark, index: s.at, count: tgbo.order.length });
+      hits = r2.hits;
+      canvas.dataset.hits = JSON.stringify(hits.map(({ x, y, w, h: hh, kind, id }) => ({ x, y, w, h: hh, kind, id: typeof id === "string" ? id : "img" })));
+      answerBox.style.display = item.type === "short" ? "block" : "none";
+      if (item.type === "short") answerBox.value = s.answers[item.id] || "";
+    };
+    const show = async (i) => {
+      const id = tgbo.order[Math.max(0, Math.min(tgbo.order.length - 1, i))];
+      item = await tgbo.item(id);
+      images = await imagesFor(item);
+      pick = null;
+      log("show", id);
+      draw();
+      canvas.focus();
+    };
+    const click = (e) => {
+      const rect = canvas.getBoundingClientRect(), x = (e.clientX - rect.left) * (canvas.width / rect.width), y = (e.clientY - rect.top) * (canvas.height / rect.height);
+      const hit = hits.find((t) => x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h);
+      if (!hit) return;
+      if (hit.kind === "option") log("answer", item.id, hit.id);
+      else if (hit.kind === "left") pick = pick === hit.id ? null : hit.id;
+      else if (hit.kind === "right" && pick) {
+        log("answer", item.id, { ...state().answers[item.id] || {}, [pick]: hit.id });
+        pick = null;
+      } else if (hit.kind === "zoom") return zoom(hit.id);
+      draw();
+    };
+    const zoom = (bmp) => {
+      const ov = h("div", { class: "overlay", onclick: () => ov.remove() });
+      const c = h("canvas", { width: bmp.width, height: bmp.height });
+      c.getContext("2d").drawImage(bmp, 0, 0);
+      ov.append(c);
+      document.body.append(ov);
+    };
+    const typed = () => log("answer", item.id, answerBox.value);
+    const next = () => {
+      const s = state();
+      if (s.at < tgbo.order.length - 1) show(s.at + 1);
+      else status.textContent = "Last item. Release the track when you are done.";
+    };
+    const prev = () => {
+      const s = state();
+      if (tgbo.settings.allowBack && s.at > 0) show(s.at - 1);
+    };
+    const onBreak = (why) => {
+      if (state().finished || state().open) return;
+      log("break", why);
+      mount(guard, h("div", { class: "card" }, h("h2", {}, "Rule 35 \u2014 protection"), h("p", {}, `You left the test (${why}) at ${hhmm()}. This is recorded. Re-enter fullscreen to resume.`), h("button", { class: "primary", onclick: resume }, "Resume in fullscreen")));
+      guard.style.display = "flex";
+    };
+    const resume = async () => {
+      try {
+        await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+        await navigator.keyboard?.lock?.();
+      } catch {
+        return;
+      }
+      log("resume");
+      guard.style.display = "none";
+      canvas.focus();
+    };
+    const guard = h("div", { class: "guard", style: { display: "none" } });
+    const onVis = () => {
+      if (document.hidden) onBreak("tab-hidden");
+    };
+    const onFs = () => {
+      if (!document.fullscreenElement) onBreak("fullscreen-exit");
+    };
+    const onBlur = () => onBreak("blur");
+    const refuse = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      status.textContent = "Copying is not permitted.";
+    };
+    const keys = (e) => {
+      const k = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && ["c", "x", "a", "s", "p", "u"].includes(k)) refuse(e);
+      if (e.key === "PrintScreen") refuse(e);
+      if (e.key === "ArrowRight" && document.activeElement === canvas) next();
+      if (e.key === "ArrowLeft" && document.activeElement === canvas) prev();
+    };
+    const arm = () => {
+      document.addEventListener("visibilitychange", onVis);
+      document.addEventListener("fullscreenchange", onFs);
+      window.addEventListener("blur", onBlur);
+      for (const ev of ["copy", "cut", "contextmenu", "dragstart"]) document.addEventListener(ev, refuse);
+      document.addEventListener("keydown", keys);
+      window.addEventListener("beforeprint", () => onBreak("print"));
+    };
+    const disarm = () => {
+      document.removeEventListener("visibilitychange", onVis);
+      document.removeEventListener("fullscreenchange", onFs);
+      window.removeEventListener("blur", onBlur);
+      for (const ev of ["copy", "cut", "contextmenu", "dragstart"]) document.removeEventListener(ev, refuse);
+      document.removeEventListener("keydown", keys);
+      clearInterval(iv);
+    };
+    const submit = async (why) => {
+      if (state().finished) return;
+      if (why !== "time") {
+        const s = state();
+        const n = tgbo.order.filter((id) => s.answers[id] === void 0 || s.answers[id] === "").length;
+        if (n && !confirm(`${n} item(s) unanswered. Release anyway?`)) return;
+      }
+      log("submit", why);
+      disarm();
+      forget();
+      const attempt = toRelease(tgbo.order, events);
+      const text2 = await giveRelease(tgbo, { priv: crew.priv, pub: crew.pub }, crew.pin, attempt);
+      await del("attempt:" + tgbo.id);
+      try {
+        navigator.keyboard?.unlock?.();
+        await document.exitFullscreen();
+      } catch {
+      }
+      go3({ screen: "released", tgbo, text: text2, why });
+    };
+    mount(
+      root3,
+      h("div", { class: "bar" }, h("span", {}, tgbo.title), timer, h("span", {}, `CN ${crew.pin}`)),
+      h(
+        "div",
+        { class: "work" },
+        canvas,
+        answerBox,
+        h("div", { class: "row" }, tgbo.settings.allowBack ? h("button", { onclick: prev }, "\u2190 Back") : null, h("button", { onclick: next }, "Next \u2192"), h("button", { class: "primary", onclick: () => submit("done") }, "Release track"), status)
+      ),
+      guard
+    );
+    canvas.addEventListener("click", click);
+    answerBox.addEventListener("input", typed);
+    arm();
+    tick();
+    if (!navigator.keyboard?.lock) log("note", "keyboard-lock-unavailable");
+    await show(state().at);
+  };
+  var renderReleased = (root3, { tgbo, text: text2, why }, go3) => mount(
+    root3,
+    h("h1", {}, "Track released"),
+    h("p", {}, why === "time" ? "Time expired; the attempt was released as it stood." : "Your attempt is sealed to the RTC. Send this file \u2014 or paste the text \u2014 to your instructor."),
+    h("div", { class: "row" }, h("button", { class: "primary", onclick: () => download(`release-${tgbo.title.replace(/\W+/g, "-")}.spike`, text2) }, "Download release"), h("button", { onclick: () => navigator.clipboard?.writeText(text2) }, "Copy text")),
+    h("textarea", { readonly: true, rows: 6, value: text2 }),
+    h("button", { onclick: () => go3({ screen: "home" }) }, "Done")
+  );
+  var renderCancel = async (root3, { text: text2 }, go3) => {
+    const crew = await identity();
+    if (!crew) return mount(root3, h("p", { class: "bad" }, "No crew key in this browser; this cancellation was sealed to your key."));
+    let r;
+    try {
+      r = await readCancel(text2, { priv: crew.priv, pub: crew.pub });
+    } catch (e) {
+      return mount(root3, h("h1", {}, "Cannot open"), h("p", { class: "bad" }, e.message), h("button", { onclick: () => go3({ screen: "home" }) }, "Back"));
+    }
+    const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
+    mount(
+      root3,
+      h("h1", {}, r.title),
+      h("p", { class: r.pass ? "good big" : "bad big" }, `${Math.round(r.grade * 100)}% \u2014 ${r.pass ? "PASS" : "did not pass"}`, r.pending ? ` (${r.pending} short answers not yet marked)` : ""),
+      h("h2", {}, "By area"),
+      h("table", {}, r.areas.map((a) => h("tr", {}, h("td", {}, a.label), h("td", {}, `${a.correct}/${a.total}`), h("td", {}, h("div", { class: "meter" }, h("div", { style: { width: pct(a.correct, a.total) + "%" } })))))),
+      h("h2", {}, "Read these"),
+      r.read.length ? h("ul", {}, r.read.map((x) => h("li", {}, h("b", {}, x.ref), x.area ? ` \xB7 ${x.area}` : "", ` \xB7 missed ${x.missed}`))) : h("p", {}, "Nothing \u2014 every rule tested was answered correctly."),
+      h("button", { onclick: () => go3({ screen: "home" }) }, "Done")
+    );
+  };
+
+  // src/score.js
+  var tagKey = (t) => t.includes(":") ? t : t;
+  var scoreAttempt = (test, attempt, marks = {}) => {
+    const answers = attempt.answers || {};
+    const perItem = test.items.map((it) => {
+      const a = answers[it.id];
+      let got = 0, pending = false;
+      if (it.type === "mc") got = a === it.key ? it.worth : 0;
+      else if (it.type === "match") got = it.pairs.reduce((n, p) => n + ((a || {})[p.id] === p.id ? 1 : 0), 0);
+      else if (it.type === "short") {
+        if (it.id in marks) got = Math.min(Number(marks[it.id]) || 0, it.worth);
+        else pending = true;
+      }
+      return { id: it.id, area: it.area || null, ref: it.ref, tags: it.tags, worth: it.worth, got, pending, answered: a !== void 0 && a !== "" };
+    });
+    const total = perItem.reduce((n, i) => n + i.worth, 0), score = perItem.reduce((n, i) => n + i.got, 0);
+    const roll = (keyOf) => {
+      const m = {};
+      for (const i of perItem) for (const k of [].concat(keyOf(i)).filter(Boolean)) {
+        m[k] ?? (m[k] = { correct: 0, total: 0 });
+        m[k].correct += i.got;
+        m[k].total += i.worth;
+      }
+      return m;
+    };
+    const areas = (test.areas.length ? test.areas : [...new Set(perItem.map((i) => i.area))].map((id) => ({ id, label: id }))).map((a) => ({ ...a, ...roll((i) => i.area)[a.id] || { correct: 0, total: 0 } }));
+    const refs = roll((i) => i.ref);
+    const read = Object.entries(refs).filter(([, v]) => v.correct < v.total).map(([ref, v]) => ({ ref, missed: v.total - v.correct, area: perItem.find((i) => i.ref.includes(ref))?.area || null })).sort((x, y) => y.missed - x.missed || x.ref.localeCompare(y.ref));
+    const grade = total ? score / total : 0;
+    return {
+      score,
+      total,
+      grade,
+      pass: grade >= (test.settings.pass ?? 0.9),
+      pending: perItem.filter((i) => i.pending).length,
+      areas,
+      tags: roll((i) => i.tags.map(tagKey)),
+      read,
+      perItem
+    };
+  };
+  var summarize = (test, scored) => {
+    const byItem = test.items.map((it) => {
+      const rows = scored.map((s) => s.perItem.find((i) => i.id === it.id));
+      const n = rows.length, fraction = rows.reduce((a, r) => a + r.got / it.worth, 0);
+      return { id: it.id, area: it.area || null, ref: it.ref, n, correct: rows.filter((r) => r.got === it.worth).length, difficulty: n ? 1 - fraction / n : 0 };
+    });
+    const byArea = test.areas.map((a) => {
+      const c = scored.map((s) => s.areas.find((x) => x.id === a.id)).filter(Boolean);
+      return { ...a, mean: c.length ? c.reduce((n, x) => n + (x.total ? x.correct / x.total : 0), 0) / c.length : 0 };
+    });
+    return {
+      n: scored.length,
+      passed: scored.filter((s) => s.pass).length,
+      mean: scored.length ? scored.reduce((n, s) => n + s.grade, 0) / scored.length : 0,
+      byItem: byItem.sort((x, y) => y.difficulty - x.difficulty),
+      byArea
+    };
+  };
+
+  // src/sheet.js
+  var newSheet = async (name) => {
+    const kp = await keypair(true);
+    return { rtc: { name, pub: kp.pub, priv: kp.priv }, trains: [], tgbos: [], releases: [], marks: {} };
+  };
+  var saveSheet = async (sheet2, passphrase) => {
+    const salt = random(16), iter = 6e5;
+    const key = await passKey(passphrase, salt, iter);
+    const plain = { ...sheet2, rtc: { name: sheet2.rtc.name, pub: sheet2.rtc.pub, priv: await exportPriv(sheet2.rtc.priv) } };
+    const body = { v: 1, kind: "sheet", kdf: { salt: b64url(salt), iter }, box: await sealJSON(key, plain) };
+    return armor("SHEET", body, { rtc: sheet2.rtc.name, trains: sheet2.trains.length, tgbos: sheet2.tgbos.length });
+  };
+  var openSheet = async (text2, passphrase) => {
+    const { body } = await dearmor(text2, "SHEET");
+    const key = await passKey(passphrase, unb64url(body.kdf.salt), body.kdf.iter);
+    const plain = await openJSON(key, body.box).catch(() => {
+      throw new Error("wrong passphrase");
+    });
+    plain.rtc.priv = await importPriv(plain.rtc.priv, true);
+    return plain;
+  };
+
+  // src/app/rtc.js
+  var sheet = null;
+  var tab = "trains";
+  var pass = "";
+  var notes = [];
+  var note = (m, bad = false) => {
+    notes.unshift({ m, bad, t: Date.now() });
+    notes = notes.slice(0, 6);
+  };
+  var intake = async (items) => {
+    for (const it of items) {
+      try {
+        if (it.error) {
+          note(`${it.name}: ${it.error}`, true);
+          continue;
+        }
+        if (it.asset) {
+          const bytes = await readFileBytes(it.asset);
+          (sheet.assets ?? (sheet.assets = {}))[it.name] = { mime: it.asset.type || "image/jpeg", b64: b64(bytes) };
+          note(`asset ${it.name} (${Math.round(bytes.length / 1024)} KB)`);
+          continue;
+        }
+        if (it.source) {
+          const { test, errors } = await parseTest(it.text);
+          if (errors.length) {
+            note(`${it.name}: ${errors.length} problem(s) \u2014 ${errors[0]}`, true);
+            sheet.draft = { name: it.name, source: it.text, errors };
+          } else {
+            sheet.draft = { name: it.name, source: it.text, test, errors: [] };
+            note(`test source ${it.name}: ${test.items.length} items`);
+          }
+          tab = "tests";
+          continue;
+        }
+        const kind = sniff(it.text);
+        if (kind === "CREW") {
+          const c = await readCrew(it.text);
+          const i = sheet.trains.findIndex((t) => t.pin === c.pin);
+          if (i >= 0 && sheet.trains[i].pub !== c.pub) note(`CN ${c.pin} re-registered with a new key (${c.name}); replaced`, true);
+          if (i >= 0) sheet.trains[i] = c;
+          else sheet.trains.push(c);
+          note(`crew CN ${c.pin} ${c.name}`);
+          tab = "trains";
+        } else if (kind === "RELEASE") {
+          const { body } = await dearmor(it.text);
+          const rec = sheet.tgbos.find((t) => t.id === body.tgbo);
+          if (!rec) throw new Error("release is for a TGBO not on this sheet");
+          const r = await takeRelease(it.text, sheet.rtc, rec);
+          const onSheet = sheet.trains.find((t) => t.pin === r.pin);
+          const identity2 = onSheet && onSheet.pub === r.train ? "ok" : "KEY MISMATCH";
+          sheet.releases = sheet.releases.filter((x) => !(x.tgbo === rec.id && x.pin === r.pin));
+          sheet.releases.push({ tgbo: rec.id, pin: r.pin, train: r.train, identity: identity2, attempt: r.attempt, name: onSheet?.name || "?" });
+          note(`release CN ${r.pin} for ${rec.title}${identity2 !== "ok" ? " \u2014 KEY MISMATCH" : ""}`, identity2 !== "ok");
+          tab = "releases";
+        } else if (kind === "SHEET") note("a sheet is already open; use the home page to open another", true);
+        else if (kind === "TGBO") note("that is a TGBO you issued; the RTC does not copy TGBOs", true);
+        else note(`${it.name}: not recognised`, true);
+      } catch (e) {
+        note(`${it.name}: ${e.message}`, true);
+      }
+    }
+  };
+  var trainsTab = () => h(
+    "div",
+    {},
+    h("p", { class: "small" }, "Drop badges (PNG) or pasted CREW text on the desk. Each train appears once per PIN; a new key for a known PIN replaces the old one and is noted."),
+    h(
+      "table",
+      {},
+      h("tr", {}, h("th", {}, "PIN"), h("th", {}, "Name"), h("th", {}, "Key")),
+      sheet.trains.sort((a, b) => a.pin.localeCompare(b.pin)).map((t) => h("tr", {}, h("td", {}, `CN ${t.pin}`), h("td", {}, t.name), h("td", { class: "small" }, t.pub.slice(0, 12) + "\u2026", " ", h("button", { onclick: () => {
+        sheet.trains = sheet.trains.filter((x) => x !== t);
+        rerender();
+      } }, "remove"))))
+    ),
+    sheet.trains.length ? null : h("p", { class: "status" }, "No trains yet.")
+  );
+  var testsTab = () => {
+    const d = sheet.draft;
+    const issue = async () => {
+      if (!d?.test) return;
+      const missing = d.test.items.flatMap((i) => i.img.map((im) => im.name)).filter((n) => !(sheet.assets || {})[n]);
+      if (missing.length) return note(`missing assets: ${[...new Set(missing)].join(", ")} \u2014 drop them on the desk`, true), rerender();
+      if (!sheet.trains.length) return note("no trains on the sheet", true), rerender();
+      const { text: text2, record } = await issueTGBO(d.test, sheet.rtc, sheet.trains, sheet.assets || {}, sheet.rtc.name);
+      record.source = d.source;
+      record.tgbo = text2;
+      record.issued = Date.now();
+      record.trains = sheet.trains.map((t) => t.pin);
+      sheet.tgbos.push(record);
+      download(`${d.test.title.replace(/\W+/g, "-")}.tie`, text2);
+      note(`issued ${record.title} to ${sheet.trains.length} train(s) \u2014 complete ${record.hash.slice(0, 4).toUpperCase()}`);
+      rerender();
+    };
+    return h(
+      "div",
+      {},
+      h("p", { class: "small" }, "Drop a test source (.txt) and any images it names. Issue writes one TGBO for every train on the sheet."),
+      d ? h(
+        "div",
+        { class: "card" },
+        h("b", {}, d.name),
+        d.errors.length ? h("ul", { class: "bad" }, d.errors.map((e) => h("li", {}, e))) : h("p", {}, `${d.test.title} \xB7 ${d.test.items.length} items \xB7 ${fmtTime(d.test.settings.time)} \xB7 pass ${Math.round(d.test.settings.pass * 100)}% \xB7 areas: ${d.test.areas.map((a) => a.id).join(", ") || "none"}`),
+        d.errors.length ? null : h("button", { class: "primary", onclick: issue }, `Issue TGBO to ${sheet.trains.length} train(s)`)
+      ) : h("p", { class: "status" }, "No test source loaded."),
+      h("h2", {}, "Issued"),
+      h("table", {}, sheet.tgbos.map((t) => h("tr", {}, h("td", {}, t.title), h("td", { class: "small" }, new Date(t.issued).toLocaleString()), h("td", {}, `${t.trains?.length ?? "?"} trains`), h("td", { class: "complete small" }, t.hash.slice(0, 4).toUpperCase()), h("td", {}, h("button", { onclick: () => download(`${t.title.replace(/\W+/g, "-")}.tie`, t.tgbo) }, "download again"))))),
+      h("h2", {}, "Assets on the desk"),
+      h("p", { class: "small" }, Object.keys(sheet.assets || {}).join(", ") || "none")
+    );
+  };
+  var releasesTab = () => {
+    const groups = sheet.tgbos.map((rec) => {
+      const rel = sheet.releases.filter((r) => r.tgbo === rec.id);
+      return { rec, rel };
+    }).filter((g) => g.rel.length);
+    if (!groups.length) return h("p", { class: "status" }, "No releases yet. Drop .spike files or pasted RELEASE text on the desk.");
+    return h("div", {}, groups.map(({ rec, rel }) => {
+      const test = rec._test;
+      return h(
+        "div",
+        { class: "card" },
+        h("h2", {}, rec.title),
+        test ? releaseTable(rec, test, rel) : h("button", { onclick: async () => {
+          rec._test = (await parseTest(rec.source)).test;
+          rerender();
+        } }, "Score")
+      );
+    }));
+  };
+  var releaseTable = (rec, test, rel) => {
+    const marks = (pin) => {
+      var _a, _b;
+      return (_a = sheet.marks)[_b = `${rec.id}:${pin}`] ?? (_a[_b] = {});
+    };
+    const scored = rel.map((r) => ({ r, s: scoreAttempt(test, r.attempt, marks(r.pin)) }));
+    const sum = summarize(test, scored.map((x) => x.s));
+    const cancelAll = async () => {
+      for (const { r, s } of scored) download(`cancel-CN${r.pin}.plate`, await cancelTGBO(rec, sheet.rtc, r.train, r.pin, s));
+    };
+    return h(
+      "div",
+      {},
+      h("p", {}, `${sum.n} released \xB7 ${sum.passed} passed \xB7 mean ${Math.round(sum.mean * 100)}%`),
+      h(
+        "table",
+        {},
+        h("tr", {}, h("th", {}, "Train"), h("th", {}, "Name"), h("th", {}, "Score"), h("th", {}, "Grade"), h("th", {}, "Breaks"), h("th", {}, "Identity"), h("th", {})),
+        scored.map(({ r, s }) => h(
+          "tr",
+          {},
+          h("td", {}, `CN ${r.pin}`),
+          h("td", {}, r.name),
+          h("td", {}, `${s.score}/${s.total}${s.pending ? ` (+${s.pending} unmarked)` : ""}`),
+          h("td", { class: s.pass ? "good" : "bad" }, `${Math.round(s.grade * 100)}%`),
+          h("td", {}, r.attempt.breaks?.length || 0),
+          h("td", { class: r.identity === "ok" ? "good" : "bad" }, r.identity),
+          h("td", {}, h("button", { onclick: () => {
+            view = { rec, test, r };
+            rerender();
+          } }, "review"), " ", h("button", { onclick: async () => download(`cancel-CN${r.pin}.plate`, await cancelTGBO(rec, sheet.rtc, r.train, r.pin, s)) }, "cancel (send marks)"))
+        ))
+      ),
+      h("div", { class: "row" }, h("button", { onclick: cancelAll }, "Cancel all (download every .plate)"), h("button", { onclick: () => download(`${rec.title.replace(/\W+/g, "-")}-summary.csv`, csv(test, scored)) }, "Summary CSV")),
+      h("h2", {}, "By area (class mean)"),
+      h("table", {}, sum.byArea.map((a) => h("tr", {}, h("td", {}, a.label), h("td", {}, `${Math.round(a.mean * 100)}%`), h("td", {}, h("div", { class: "meter" }, h("div", { style: { width: Math.round(a.mean * 100) + "%" } })))))),
+      h("h2", {}, "Hardest items"),
+      h("table", {}, sum.byItem.slice(0, 10).map((i) => h("tr", {}, h("td", {}, i.id), h("td", {}, i.ref.join(", ")), h("td", {}, `${i.correct}/${i.n} fully correct`))))
+    );
+  };
+  var csv = (test, scored) => {
+    const head = ["pin", "name", "score", "total", "grade", "pass", "breaks", "identity", ...test.areas.map((a) => a.id), ...test.items.map((i) => i.id)];
+    const rows = scored.map(({ r, s }) => [r.pin, r.name, s.score, s.total, s.grade.toFixed(3), s.pass, r.attempt.breaks?.length || 0, r.identity, ...s.areas.map((a) => `${a.correct}/${a.total}`), ...s.perItem.map((i) => i.got)]);
+    return [head, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+  };
+  var view = null;
+  var reviewView = () => {
+    var _a, _b;
+    const { rec, test, r } = view;
+    const marks = (_a = sheet.marks)[_b = `${rec.id}:${r.pin}`] ?? (_a[_b] = {});
+    const s = scoreAttempt(test, r.attempt, marks);
+    const raw = { items: JSON.parse(atob(rec.tgbo.split("\n\n")[1].replace(/-----END[\s\S]*$/, "").replace(/\s+/g, ""))).items };
+    const canvas = h("canvas", { width: 900, height: 700, style: { width: "100%", border: "1px solid #ddd" } });
+    const order = r.attempt.events.filter((e) => e[1] === "show").map((e) => e[2]).filter((v, i, a) => a.indexOf(v) === i);
+    let cursor = r.attempt.events.length;
+    const slider = h("input", { type: "range", min: 0, max: r.attempt.events.length, value: cursor, oninput: (e) => {
+      cursor = Number(e.target.value);
+      paint();
+    } });
+    const info = h("p", { class: "small" });
+    const paint = async () => {
+      const st = fold(order, r.attempt.events.slice(0, cursor));
+      const id = order[st.at];
+      if (!id) return;
+      const item = await openItem(rec, raw, id);
+      if (item.pairs?.length) item.rights = item.pairs.map((p) => ({ id: p.id, text: p.right }));
+      drawItem(canvas, item, { answer: st.answers[id], images: await imagesFor(item), watermark: "REVIEW", index: st.at, count: order.length });
+      const ev = r.attempt.events[cursor - 1];
+      info.textContent = ev ? `event ${cursor}/${r.attempt.events.length}: ${ev[1]} ${ev[2] ?? ""} at +${Math.round((ev[0] - r.attempt.started) / 1e3)}s` : "";
+    };
+    paint();
+    return h(
+      "div",
+      {},
+      h("button", { onclick: () => {
+        view = null;
+        rerender();
+      } }, "\u2190 back"),
+      h("h2", {}, `CN ${r.pin} ${r.name} \u2014 ${rec.title}: ${s.score}/${s.total} (${Math.round(s.grade * 100)}%)`),
+      h("h2", {}, "Answers"),
+      h("table", {}, test.items.map((it) => {
+        const a = r.attempt.answers[it.id];
+        const pi = s.perItem.find((x) => x.id === it.id);
+        return h(
+          "tr",
+          {},
+          h("td", { class: "small" }, it.id, h("br"), it.ref.join(", ")),
+          h("td", {}, it.prompt.split("\n")[0].slice(0, 90)),
+          h("td", {}, it.type === "short" ? h("div", {}, h("div", {}, h("b", {}, "answer: "), a || "\u2014"), h("div", { class: "small" }, h("b", {}, "model: "), it.answer), h("label", {}, "mark ", h("input", { type: "number", min: 0, max: it.worth, step: 0.5, value: marks[it.id] ?? "", style: { width: "70px" }, onchange: (e) => {
+            marks[it.id] = Number(e.target.value);
+            rerender();
+          } }))) : it.type === "match" ? Object.entries(a || {}).map(([l, rr]) => `${l}\u2192${rr} `).join("") || "\u2014" : `${a ?? "\u2014"} (key ${it.key})`),
+          h("td", { class: pi.pending ? "status" : pi.got === pi.worth ? "good" : "bad" }, pi.pending ? "unmarked" : `${pi.got}/${pi.worth}`)
+        );
+      })),
+      h("h2", {}, "Breaks"),
+      r.attempt.breaks?.length ? h("ul", {}, r.attempt.breaks.map((b) => h("li", {}, `${b.why} for ${Math.round(b.ms / 1e3)} s at +${Math.round((b.at - r.attempt.started) / 1e3)} s`))) : h("p", {}, "none"),
+      h("h2", {}, "Playback"),
+      slider,
+      info,
+      canvas
+    );
+  };
+  var root;
+  var go;
+  var rerender = () => render(root, {}, go);
+  var render = async (r, ctx2, g) => {
+    root = r;
+    go = g;
+    if (ctx2.fresh && !sheet) {
+      const name = prompt("RTC name or initials (goes on every Complete)") || "RTC";
+      sheet = await newSheet(name);
+      note("new sheet");
+    }
+    if (ctx2.sheetText) {
+      const pw = prompt("Sheet passphrase");
+      if (pw == null) return go({ screen: "home" });
+      try {
+        sheet = await openSheet(ctx2.sheetText, pw);
+        pass = pw;
+        note(`opened sheet for ${sheet.rtc.name}`);
+      } catch (e) {
+        return go({ screen: "home", error: e.message });
+      }
+    }
+    if (!sheet) return mount(root, h("h1", {}, "RTC"), h("p", {}, "Open a sheet (.bed) from the home page, or start a new one."), h("button", { onclick: () => go({ screen: "rtc", fresh: true }) }, "New sheet"), h("button", { onclick: () => go({ screen: "home" }) }, "Home"));
+    sheet.marks ?? (sheet.marks = {});
+    sheet.releases ?? (sheet.releases = []);
+    sheet.assets ?? (sheet.assets = {});
+    if (ctx2.incoming) {
+      await intake(ctx2.incoming);
+      ctx2.incoming = null;
+    }
+    const save = async () => {
+      if (!pass) {
+        pass = prompt("Choose a passphrase for this sheet (you will need it every time)") || "";
+        if (!pass) return;
+      }
+      const { draft, ...persist } = sheet;
+      for (const t of persist.tgbos) delete t._test;
+      download(`${sheet.rtc.name.replace(/\W+/g, "-")}.bed`, await saveSheet(persist, pass));
+      note("sheet saved");
+      rerender();
+    };
+    const takeFiles = async (files) => {
+      const items = [];
+      for (const f of files) {
+        if (/\.png$/i.test(f.name)) {
+          const t = badgeRead(await readFileBytes(f));
+          items.push(t ? { name: f.name, text: t } : { name: f.name, asset: f });
+        } else if (/\.(jpe?g|gif|webp)$/i.test(f.name)) items.push({ name: f.name, asset: f });
+        else {
+          const text2 = await readFileText(f);
+          items.push(sniff(text2) ? { name: f.name, text: text2 } : { name: f.name, text: text2, source: true });
+        }
+      }
+      await intake(items);
+      rerender();
+    };
+    const drop = h(
+      "div",
+      { class: "drop", ondragover: (e) => {
+        e.preventDefault();
+        drop.classList.add("over");
+      }, ondragleave: () => drop.classList.remove("over"), ondrop: (e) => {
+        e.preventDefault();
+        drop.classList.remove("over");
+        takeFiles(e.dataTransfer.files);
+      } },
+      "Drop badges, test sources, images, releases here",
+      h("br"),
+      h("label", { class: "btn", style: { marginTop: "8px", display: "inline-block" } }, "Choose files", h("input", { type: "file", multiple: true, style: { display: "none" }, onchange: (e) => takeFiles(e.target.files) }))
+    );
+    const paste = h("textarea", { rows: 3, placeholder: "Or paste CREW / RELEASE text\u2026" });
+    mount(
+      root,
+      h("div", { class: "bar" }, h("span", {}, `RTC ${sheet.rtc.name}`), h("span", {}, `${sheet.trains.length} trains \xB7 ${sheet.tgbos.length} TGBOs \xB7 ${sheet.releases.length} releases`), h("button", { onclick: save }, "Save sheet (.bed)")),
+      h("div", { class: "row" }, drop),
+      h("div", { class: "row" }, paste, h("button", { onclick: async () => {
+        await intake([{ name: "pasted", text: paste.value }]);
+        paste.value = "";
+        rerender();
+      } }, "Take")),
+      notes.length ? h("ul", { class: "small" }, notes.map((n) => h("li", { class: n.bad ? "bad" : "" }, n.m))) : null,
+      view ? reviewView() : h(
+        "div",
+        {},
+        h("div", { class: "tabs" }, ["trains", "tests", "releases"].map((t) => h("button", { class: tab === t ? "on" : "", onclick: () => {
+          tab = t;
+          rerender();
+        } }, t[0].toUpperCase() + t.slice(1)))),
+        tab === "trains" ? trainsTab() : tab === "tests" ? testsTab() : releasesTab()
+      ),
+      h("p", { class: "small" }, h("button", { onclick: () => go({ screen: "home" }) }, "Home"))
+    );
+  };
+
+  // src/app/main.js
+  var root2 = document.querySelector("main");
+  var ctx = { screen: "home" };
+  var go2 = (next) => {
+    ctx = next;
+    render2();
+  };
+  var openText = async (text2, name = "") => {
+    const kind = sniff(text2);
+    if (kind === "TGBO") return go2({ screen: "copy", text: text2 });
+    if (kind === "CANCEL") return go2({ screen: "cancel", text: text2 });
+    if (kind === "SHEET") return go2({ screen: "rtc", sheetText: text2 });
+    if (kind === "RELEASE" || kind === "CREW") return go2({ screen: "rtc", incoming: [{ name, text: text2 }] });
+    if (/^#|\n---/.test(text2)) return go2({ screen: "rtc", incoming: [{ name, text: text2, source: true }] });
+    go2({ screen: "home", error: `Not a Ballast file${name ? ": " + name : ""}` });
+  };
+  var openFiles = async (files) => {
+    const list = [...files];
+    if (!list.length) return;
+    const texts = [];
+    for (const f of list) {
+      if (/\.png$/i.test(f.name)) {
+        const t = badgeRead(await readFileBytes(f));
+        if (t) texts.push({ name: f.name, text: t });
+        else texts.push({ name: f.name, error: "badge has no crew data (re-encoded?)" });
+      } else if (/\.(jpe?g|gif|webp|svg)$/i.test(f.name)) texts.push({ name: f.name, asset: f });
+      else texts.push({ name: f.name, text: await readFileText(f) });
+    }
+    if (texts.length === 1 && texts[0].text) return openText(texts[0].text, texts[0].name);
+    go2({ screen: "rtc", incoming: texts.map((t) => t.text && /^#|\n---/.test(t.text) && !sniff(t.text) ? { ...t, source: true } : t) });
+  };
+  var renderHome = () => {
+    const paste = h("textarea", { rows: 5, placeholder: "Or paste a Ballast file here (TGBO, RELEASE, CANCEL, SHEET, CREW)\u2026" });
+    const drop = h(
+      "div",
+      { class: "drop", ondragover: (e) => {
+        e.preventDefault();
+        drop.classList.add("over");
+      }, ondragleave: () => drop.classList.remove("over"), ondrop: (e) => {
+        e.preventDefault();
+        drop.classList.remove("over");
+        openFiles(e.dataTransfer.files);
+      } },
+      "Drop a file here",
+      h("br"),
+      h("label", { class: "btn", style: { marginTop: "10px", display: "inline-block" } }, "Choose files", h("input", { type: "file", multiple: true, onchange: (e) => openFiles(e.target.files), style: { display: "none" } }))
+    );
+    mount(
+      root2,
+      h("h1", {}, "Ballast"),
+      h("p", { class: "small" }, "A test that stays on the rails. Nothing leaves this page."),
+      ctx.error ? h("p", { class: "bad" }, ctx.error) : null,
+      drop,
+      paste,
+      h("div", { class: "row" }, h("button", { onclick: () => paste.value.trim() && openText(paste.value) }, "Open pasted text")),
+      h("h2", {}, "Trains"),
+      h("div", { class: "row" }, h("button", { onclick: () => go2({ screen: "register" }) }, "Register crew (make a badge)")),
+      h("h2", {}, "RTC"),
+      h("div", { class: "row" }, h("button", { onclick: () => go2({ screen: "rtc", fresh: true }) }, "Open the desk (new sheet)")),
+      h("p", { class: "small" }, "Trains: register once, send your badge, drop the TGBO your RTC sends you. RTC: open a sheet, add badges, load a test, issue the TGBO, drop the releases.")
+    );
+  };
+  var render2 = async () => {
+    switch (ctx.screen) {
+      case "home":
+        return renderHome();
+      case "register":
+        return renderRegister(root2, go2);
+      case "registered":
+        return renderRegistered(root2, ctx, go2);
+      case "copy":
+        return renderCopy(root2, ctx, go2);
+      case "work":
+        return renderWork(root2, ctx, go2);
+      case "released":
+        return renderReleased(root2, ctx, go2);
+      case "cancel":
+        return renderCancel(root2, ctx, go2);
+      case "rtc":
+        return render(root2, ctx, go2);
+      default:
+        return renderHome();
+    }
+  };
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+  render2();
+})();
+</script>
+</body>
+</html>

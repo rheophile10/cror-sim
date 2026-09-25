@@ -46,11 +46,12 @@ detail, the scene JSON schema, and an honest list of what it does not do yet.
 ## cror.ca
 
 The published site is assembled in [`site/`](site): a menu at the root with the
-viewer above at `sim/` and the conductor game at `game/`. The game comes from a
-local project with no remote, so its build is committed in `site/vendor/`:
+viewer above at `sim/`, the conductor game at `game/`, and Ballast (the test
+system) at `ballast/`. The game and Ballast come from local projects, so their
+builds are committed in `site/vendor/`:
 
 ```sh
-npm run pack --prefix site                                            # refresh site/vendor from ../../conductor-game
+npm run pack --prefix site                                            # refresh site/vendor from ../../conductor-game and ../../ballast
 npm run build --prefix world-sim-app && npm run build --prefix site   # site/dist
 npm test --prefix site                                                # Chromium, file:// and http
 ```

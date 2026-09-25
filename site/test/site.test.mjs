@@ -54,11 +54,11 @@ for (const transport of ['file', 'http']) {
       return { p, errors, scripts };
     };
 
-    test('the menu offers two places and loads none of them', async () => {
+    test('the menu offers three places and loads none of them', async () => {
       const { p, errors, scripts } = await page();
       await p.goto(base() + 'index.html');
       const links = await p.locator('a.option').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
-      assert.deepEqual(links, ['sim/index.html', 'game/index.html']);
+      assert.deepEqual(links, ['sim/index.html', 'game/index.html', 'ballast/index.html']);
       assert.deepEqual(scripts, []);
       assert.deepEqual(errors, []);
       await p.context().close();
@@ -70,6 +70,17 @@ for (const transport of ['file', 'http']) {
       await p.locator('a.option', { hasText: 'Whiteshell' }).click();
       await p.waitForLoadState('load');
       assert.equal(await p.title(), 'Whiteshell Subdivision');
+      assert.deepEqual(errors, []);
+      await p.context().close();
+    });
+
+    test('ballast opens from the menu', async () => {
+      const { p, errors } = await page();
+      await p.goto(base() + 'index.html');
+      await p.locator('a.option', { hasText: 'Ballast' }).click();
+      await p.waitForLoadState('load');
+      assert.equal(await p.title(), 'Ballast');
+      await p.locator('text=Register crew').waitFor();
       assert.deepEqual(errors, []);
       await p.context().close();
     });
